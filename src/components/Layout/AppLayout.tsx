@@ -8,6 +8,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Plus,
+  FolderKanban,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '../../store/authStore'
@@ -40,6 +41,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const primary = [
     { icon: Home, label: 'Home', path: '/dashboard' },
     { icon: LayoutTemplate, label: 'Decks', path: '/decks' },
+    { icon: FolderKanban, label: 'Projects', path: '/projects' },
     { icon: Library, label: 'Templates', path: '/templates' },
   ]
 
