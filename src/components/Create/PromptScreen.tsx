@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Paperclip, Sparkles, X, Loader2, ArrowLeft } from 'lucide-react'
+import { Paperclip, Sparkles, X, Loader2, ArrowLeft, Mic, Square } from 'lucide-react'
 
 interface Props {
   onGenerate: (prompt: string, slideCount: number, file?: File) => void
@@ -19,14 +19,76 @@ const SLIDE_OPTIONS = [5, 7, 10, 12, 15, 20]
 export function PromptScreen({ onGenerate, isGenerating }: Props) {
   const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
-  const [slideCount, setSlideCount] = useState(10)
+  const [slideCount, setSlideCount] = useState(5)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── Voice transcription (Web Speech API) ────────────────────────
+  const SR: any =
+    typeof window !== 'undefined'
+      ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      : null
+  const speechSupported = !!SR
+  const [listening, setListening] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const recognitionRef = useRef<any>(null)
+  const baseTextRef = useRef('')
+
+  useEffect(() => () => recognitionRef.current?.stop(), [])
+
+  const startListening = () => {
+    if (!SR) return
+    try {
+      const rec = new SR()
+      rec.lang = navigator.language || 'en-US'
+      rec.continuous = true
+      rec.interimResults = true
+
+      baseTextRef.current = prompt ? prompt.trimEnd() + (prompt.trimEnd() ? ' ' : '') : ''
+
+      rec.onresult = (e: any) => {
+        let final = ''
+        let interim = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i]
+          if (r.isFinal) final += r[0].transcript
+          else interim += r[0].transcript
+        }
+        if (final) baseTextRef.current += final
+        setPrompt(baseTextRef.current + interim)
+      }
+      rec.onerror = (e: any) => {
+        setListening(false)
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          setVoiceError('Microphone permission denied.')
+        } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
+          setVoiceError('Could not transcribe — try again.')
+        }
+      }
+      rec.onend = () => setListening(false)
+
+      recognitionRef.current = rec
+      setVoiceError('')
+      setListening(true)
+      rec.start()
+    } catch {
+      setListening(false)
+      setVoiceError('Voice input is not available.')
+    }
+  }
+
+  const stopListening = () => {
+    recognitionRef.current?.stop()
+    setListening(false)
+  }
+
+  const toggleListening = () => (listening ? stopListening() : startListening())
 
   const canSubmit = (prompt.trim().length > 0 || file !== null) && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
+    if (listening) stopListening()
     onGenerate(
       prompt.trim() || `Create a presentation about ${file?.name}`,
       slideCount,
@@ -40,6 +102,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--paper)' }}>
+      <style>{`@keyframes wac-mic-pulse { 0%,100% { opacity: 0.35; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.15); } }`}</style>
       {/* Top bar */}
       <div
         className="flex items-center justify-between px-10 h-14"
@@ -151,6 +214,58 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
 
+                {speechSupported && (
+                  <>
+                    <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+                    <button
+                      onClick={toggleListening}
+                      disabled={isGenerating}
+                      title={listening ? 'Stop voice input' : 'Voice input (Web Speech API)'}
+                      aria-pressed={listening}
+                      className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                      style={{
+                        color: listening ? '#fff' : 'var(--ink-soft)',
+                        background: listening ? 'var(--accent, #B43C28)' : 'transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!listening) {
+                          e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                          e.currentTarget.style.color = 'var(--ink-strong)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!listening) {
+                          e.currentTarget.style.background = 'transparent'
+                          e.currentTarget.style.color = 'var(--ink-soft)'
+                        }
+                      }}
+                    >
+                      {listening ? (
+                        <>
+                          <Square size={11} fill="currentColor" />
+                          <span className="flex items-center gap-1">
+                            Listening
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                background: '#fff',
+                                animation: 'wac-mic-pulse 1.1s ease-in-out infinite',
+                              }}
+                            />
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic size={13} />
+                          Voice
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+
                 <span className="w-px h-4" style={{ background: 'var(--line)' }} />
 
                 <div className="flex items-center gap-2">
@@ -203,6 +318,12 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
               </button>
             </div>
           </div>
+
+          {voiceError && (
+            <p className="mt-3 text-[12px] text-center" style={{ color: 'var(--accent, #B43C28)' }}>
+              {voiceError}
+            </p>
+          )}
 
           {/* Suggestions */}
           <div className="mt-6">

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Star,
   PlayCircle,
+  X,
 } from 'lucide-react'
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +335,7 @@ function SlideTwoCol() {
 export function LandingPage() {
   const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
+  const [tourOpen, setTourOpen] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -342,7 +344,21 @@ export function LandingPage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  useEffect(() => {
+    if (!tourOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTourOpen(false)
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = ''
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [tourOpen])
+
   const goLogin = () => navigate('/login')
+  const openTour = () => setTourOpen(true)
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--paper)' }}>
@@ -455,7 +471,7 @@ export function LandingPage() {
                 Start creating — free
                 <ArrowRight size={15} />
               </button>
-              <button onClick={goLogin} className="btn-secondary btn-lg">
+              <button onClick={openTour} className="btn-secondary btn-lg">
                 <PlayCircle size={15} />
                 Watch the 90s tour
               </button>
@@ -990,6 +1006,70 @@ export function LandingPage() {
           </span>
         </div>
       </footer>
+
+      {tourOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Product tour video"
+          onClick={() => setTourOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(10, 9, 7, 0.82)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px',
+            animation: 'tourFadeIn 0.25s cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        >
+          <button
+            onClick={() => setTourOpen(false)}
+            aria-label="Close video"
+            style={{
+              position: 'absolute',
+              top: 24,
+              right: 24,
+              width: 44,
+              height: 44,
+              borderRadius: 999,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={20} />
+          </button>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(1280px, 100%)',
+              aspectRatio: '16 / 9',
+              borderRadius: 18,
+              overflow: 'hidden',
+              background: '#000',
+              boxShadow: '0 40px 100px -20px rgba(0,0,0,0.6)',
+            }}
+          >
+            <video
+              src="/promo.mp4"
+              autoPlay
+              controls
+              playsInline
+              style={{ width: '100%', height: '100%', display: 'block' }}
+            />
+          </div>
+          <style>{`@keyframes tourFadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
+        </div>
+      )}
     </div>
   )
 }

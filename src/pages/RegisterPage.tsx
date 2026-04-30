@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/client'
+import { useAuthStore } from '../store/authStore'
 import { useToast } from '../components/ui/Toast'
 import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 export function RegisterPage() {
   const navigate = useNavigate()
+  const storeLogin = useAuthStore((s) => s.login)
   const toast = useToast()
   const [form, setForm] = useState({ email: '', password: '', full_name: '' })
   const [show, setShow] = useState(false)
@@ -25,13 +27,17 @@ export function RegisterPage() {
     const toastId = toast.loading('Creating your account…', 'Setting up your workspace.')
     try {
       await authApi.register(form.email, form.password, form.full_name)
+      const { data: tokens } = await authApi.login(form.email, form.password)
+      localStorage.setItem('access_token', tokens.access_token)
+      const { data: user } = await authApi.me()
+      storeLogin(tokens.access_token, tokens.refresh_token, user)
+      const firstName = user.full_name?.split(' ')[0]
       toast.update(toastId, {
         variant: 'success',
-        title: 'Account created.',
-        description: 'Sign in to get started.',
+        title: firstName ? `Welcome, ${firstName}.` : 'Welcome.',
+        description: 'Taking you to your workspace.',
       })
-      await new Promise((r) => setTimeout(r, 900))
-      navigate('/login')
+      navigate('/dashboard', { replace: true })
     } catch (err: any) {
       const msg = err.response?.data?.detail ?? 'Registration failed'
       setError(msg)
