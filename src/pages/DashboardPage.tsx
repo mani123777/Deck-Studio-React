@@ -1,98 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { presentationsApi } from '../api/client'
+import { presentationsApi, templatesApi } from '../api/client'
 import { AppLayout } from '../components/Layout/AppLayout'
-import { getThemeById } from '../data/themes'
-import type { PresentationListItem } from '../types'
-import { Plus, Upload, ArrowUpDown, LayoutGrid, List, MoreHorizontal, Sparkles } from 'lucide-react'
+import { SlidePreview } from '../components/Presentation/SlidePreview'
+import { Button } from '../components/ui/Button'
+import type { PresentationListItem, TemplateListItem } from '../types'
+import { Upload, MoreHorizontal, Sparkles, ArrowUpRight, FileUp, FilePlus, Wand2 } from 'lucide-react'
+import { ImportModal } from '../components/Dashboard/ImportModal'
 
-type FilterTab = 'all' | 'recent' | 'mine' | 'favorites'
-type ViewMode = 'grid' | 'list'
+const SLIDE_W = 1280
+const SLIDE_H = 720
 
-function ThumbPreview({ p }: { p: PresentationListItem }) {
-  const theme = getThemeById(p.theme_id ?? 'vortex')
-  const isDark = (() => {
-    const hex = theme.colors.background.replace('#', '')
-    if (hex.length < 6) return true
-    const r = parseInt(hex.slice(0, 2), 16)
-    const g = parseInt(hex.slice(2, 4), 16)
-    const b = parseInt(hex.slice(4, 6), 16)
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5
-  })()
-
-  return (
-    <div style={{
-      background: theme.colors.background,
-      width: '100%',
-      aspectRatio: '16/9',
-      position: 'relative',
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'flex-end',
-      padding: '14px 16px 12px',
-      boxSizing: 'border-box',
-    }}>
-      {/* Decorative accent bar */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: theme.colors.accent }} />
-
-      {/* Fake slide content lines */}
-      <div style={{ position: 'absolute', top: 18, left: 16, right: 16 }}>
-        <div style={{
-          fontFamily: `${theme.fonts.heading}, sans-serif`,
-          fontSize: 13,
-          fontWeight: 700,
-          color: theme.colors.heading,
-          lineHeight: 1.25,
-          overflow: 'hidden',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          wordBreak: 'break-word',
-        } as React.CSSProperties}>
-          {p.title}
-        </div>
-        <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-          {[70, 55, 80].map((w, i) => (
-            <div key={i} style={{ height: 4, width: `${w}%`, borderRadius: 2, background: theme.colors.body, opacity: 0.35 }} />
-          ))}
-        </div>
-      </div>
-
-      {/* Accent circle decoration */}
-      <div style={{
-        position: 'absolute', bottom: -18, right: -18,
-        width: 64, height: 64, borderRadius: '50%',
-        background: `${theme.colors.accent}22`,
-      }} />
-
-      {/* Slide count badge */}
-      <div style={{
-        position: 'absolute', bottom: 8, right: 10,
-        fontSize: 9, fontWeight: 700,
-        color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)',
-        letterSpacing: 0.5,
-        fontFamily: 'Inter, sans-serif',
-      }}>
-        {p.total_slides} slides
-      </div>
-    </div>
-  )
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} ${mins === 1 ? 'min' : 'mins'} ago`
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hr' : 'hrs'} ago`
+  if (days < 7) return `${days} ${days === 1 ? 'day' : 'days'} ago`
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 export function DashboardPage() {
   const navigate = useNavigate()
   const [presentations, setPresentations] = useState<PresentationListItem[]>([])
+  const [templates, setTemplates] = useState<TemplateListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<FilterTab>('recent')
-  const [view, setView] = useState<ViewMode>('grid')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
-    presentationsApi.list().then((r) => {
-      setPresentations(r.data)
-      setLoading(false)
-    })
+    Promise.all([presentationsApi.list(), templatesApi.list()])
+      .then(([pRes, tRes]) => {
+        setPresentations(pRes.data)
+        setTemplates(tRes.data)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const handleDelete = async (id: string) => {
@@ -102,206 +47,477 @@ export function DashboardPage() {
     setOpenMenu(null)
   }
 
-  const timeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime()
-    const mins = Math.floor(diff / 60000)
-    const hours = Math.floor(diff / 3600000)
-    const days = Math.floor(diff / 86400000)
-    if (mins < 60) return `${mins}m ago`
-    if (hours < 24) return `${hours}h ago`
-    return `${days}d ago`
-  }
+  const greeting = (() => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Good morning'
+    if (h < 18) return 'Good afternoon'
+    return 'Good evening'
+  })()
 
-  const tabs: { key: FilterTab; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'recent', label: 'Recently viewed' },
-    { key: 'mine', label: 'Created by you' },
-    { key: 'favorites', label: 'Favorites' },
-  ]
+  const heroTemplates = templates.slice(0, 3)
 
   return (
     <AppLayout>
-      <div className="px-8 py-7 max-w-7xl">
-        {/* Page heading */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">My Presentations</h1>
-        </div>
+      {showImport && <ImportModal onClose={() => setShowImport(false)} />}
 
-        {/* Action bar */}
-        <div className="flex items-center gap-2 mb-7">
-          <button
-            onClick={() => navigate('/create')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white transition-all"
-            style={{ background: '#0f172a', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1e293b'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0f172a'}
-          >
-            <Plus size={14} />
-            Create new
-            <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md ml-0.5" style={{ background: '#6366f1', color: '#fff' }}>AI</span>
-          </button>
-          <button
-            onClick={() => navigate('/templates')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition-all"
-          >
-            <Plus size={14} />
-            New
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition-all">
-            <Upload size={13} />
-            Import
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-        </div>
-
-        {/* Filter + view toggle */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-gray-100">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setFilter(tab.key)}
-                className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
-                  filter === tab.key
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
+      <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
+        {/* ── Hero ── */}
+        <div className="mb-16">
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+            <p className="eyebrow">— Workspace</p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setShowImport(true)}
+                leadingIcon={<Upload size={13} />}
               >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1">
-            <button className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors">
-              <ArrowUpDown size={13} />
-            </button>
-            <button
-              onClick={() => setView('grid')}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${view === 'grid' ? 'bg-gray-100 text-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
-            >
-              <LayoutGrid size={13} />
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${view === 'list' ? 'bg-gray-100 text-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
-            >
-              <List size={13} />
-            </button>
-          </div>
-        </div>
-
-        {/* Skeleton loading */}
-        {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {[1,2,3,4].map((i) => (
-              <div key={i} className="rounded-2xl overflow-hidden border border-gray-100 animate-pulse">
-                <div className="aspect-video" style={{ background: '#f1f5f9' }} />
-                <div className="p-3.5">
-                  <div className="h-3.5 rounded-lg w-3/4 mb-2" style={{ background: '#e2e8f0' }} />
-                  <div className="h-2.5 rounded-lg w-1/2" style={{ background: '#e2e8f0' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && presentations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-28">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5" style={{ background: '#f1f5f9' }}>
-              <Sparkles size={26} style={{ color: '#6366f1' }} />
+                Import
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => navigate('/create')}
+                leadingIcon={<Sparkles size={13} />}
+              >
+                Generate
+              </Button>
             </div>
-            <p className="text-[17px] font-semibold text-gray-800 mb-1.5">No presentations yet</p>
-            <p className="text-sm text-gray-400 mb-6 text-center max-w-xs">Create your first AI-powered presentation from a template</p>
+          </div>
+
+          <h1
+            className="font-serif leading-[1.0] tracking-tightest text-[40px] md:text-[56px] max-w-4xl"
+            style={{ color: 'var(--ink-strong)' }}
+          >
+            {greeting}.
+            <br />
+            <span className="font-serif-italic" style={{ color: 'var(--accent)' }}>Make something good.</span>
+          </h1>
+          <p
+            className="text-[15.5px] mt-6 max-w-md leading-relaxed"
+            style={{ color: 'var(--ink-soft)' }}
+          >
+            Decks, templates, and AI — gathered into one quiet workspace.
+          </p>
+        </div>
+
+        {/* ── Quick actions ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-20">
+          <QuickAction
+            icon={<Wand2 size={16} />}
+            label="01"
+            title="Create PPTX Using AI/Documents"
+            description="Describe your topic. AI assembles the deck."
+            onClick={() => navigate('/create')}
+            primary
+          />
+          <QuickAction
+            icon={<FilePlus size={16} />}
+            label="02"
+            title="Pick a template"
+            description="Start from a hand-designed layout."
+            onClick={() => navigate('/templates')}
+          />
+          <QuickAction
+            icon={<FileUp size={16} />}
+            label="03"
+            title="Import a PPTX"
+            description="Bring an existing PowerPoint in."
+            onClick={() => setShowImport(true)}
+          />
+        </div>
+
+        {/* ── Recent decks ── */}
+        <div className="mb-20">
+          <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
+            <div>
+              <p className="eyebrow mb-3">— Your work</p>
+              <h2
+                className="font-serif leading-[1.05] tracking-tighter text-[26px] md:text-[34px]"
+                style={{ color: 'var(--ink-strong)' }}
+              >
+                Recent decks
+              </h2>
+            </div>
             <button
-              onClick={() => navigate('/templates')}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
-              style={{ background: '#0f172a' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1e293b'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0f172a'}
+              onClick={() => navigate('/decks')}
+              className="text-[13px] font-semibold flex items-center gap-1.5 transition-colors group"
+              style={{ color: 'var(--ink-strong)' }}
             >
-              <Plus size={14} />
-              Create new
+              All decks
+              <ArrowUpRight
+                size={13}
+                className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+              />
             </button>
           </div>
-        )}
 
-        {/* Grid */}
-        {!loading && presentations.length > 0 && view === 'grid' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {presentations.map((p) => (
-              <div
-                key={p.id}
-                className="group rounded-2xl overflow-hidden cursor-pointer transition-all"
-                style={{ border: '1px solid #f1f5f9', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(0,0,0,0.10)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'}
-                onClick={() => navigate(`/presentations/${p.id}`)}
+          {loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-10">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i}>
+                  <div className="aspect-[16/9] rounded-2xl shimmer mb-4" />
+                  <div className="h-4 w-2/3 mb-2 rounded shimmer" />
+                  <div className="h-3 w-1/3 rounded shimmer" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && presentations.length === 0 && (
+            <div
+              className="rounded-3xl px-12 py-16 text-center"
+              style={{ background: 'var(--surface)', border: '1px dashed var(--line-strong)' }}
+            >
+              <p
+                className="font-serif text-[28px] md:text-[34px] leading-tight tracking-tighter mb-3"
+                style={{ color: 'var(--ink-strong)' }}
               >
-                {/* Theme-colored thumbnail */}
-                <div className="relative overflow-hidden">
-                  <ThumbPreview p={p} />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
-                </div>
-
-                <div className="px-3.5 py-3 bg-white">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-gray-900 truncate leading-snug">{p.title}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{timeAgo(p.updated_at)}</p>
-                    </div>
-                    <div className="relative flex-shrink-0">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === p.id ? null : p.id) }}
-                        className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-600 transition-all"
-                      >
-                        <MoreHorizontal size={13} />
-                      </button>
-                      {openMenu === p.id && (
-                        <div className="absolute right-0 top-7 z-10 bg-white rounded-xl py-1.5 w-36 border border-gray-100" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
-                          <button onClick={() => { navigate(`/presentations/${p.id}`); setOpenMenu(null) }} className="w-full text-left px-3.5 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50">Open</button>
-                          <button onClick={() => handleDelete(p.id)} className="w-full text-left px-3.5 py-1.5 text-[13px] text-red-500 hover:bg-red-50">Delete</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                A blank page,
+                <br />
+                <span className="font-serif-italic" style={{ color: 'var(--accent)' }}>waiting.</span>
+              </p>
+              <p
+                className="text-[14px] mb-7 max-w-sm mx-auto leading-relaxed"
+                style={{ color: 'var(--ink-soft)' }}
+              >
+                Create your first deck — generate from a prompt, or start from a template.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <Button variant="secondary" onClick={() => navigate('/templates')}>
+                  Browse templates
+                </Button>
+                <Button variant="primary" onClick={() => navigate('/create')} leadingIcon={<Sparkles size={13} />}>
+                  Generate with AI
+                </Button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* List */}
-        {!loading && presentations.length > 0 && view === 'list' && (
-          <div className="rounded-2xl overflow-hidden border border-gray-100" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            {presentations.map((p, i) => {
-              const theme = getThemeById(p.theme_id ?? 'vortex')
-              return (
-                <div
+          {!loading && presentations.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-10">
+              {presentations.slice(0, 4).map((p) => (
+                <DeckCard
                   key={p.id}
-                  className={`flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 cursor-pointer transition-colors ${i !== 0 ? 'border-t border-gray-50' : ''}`}
-                  onClick={() => navigate(`/presentations/${p.id}`)}
+                  p={p}
+                  menuOpen={openMenu === p.id}
+                  onToggleMenu={() => setOpenMenu(openMenu === p.id ? null : p.id)}
+                  onCloseMenu={() => setOpenMenu(null)}
+                  onOpen={() => navigate(`/presentations/${p.id}`)}
+                  onDelete={() => handleDelete(p.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Featured templates ── */}
+        {heroTemplates.length > 0 && (
+          <div>
+            <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
+              <div>
+                <p className="eyebrow mb-3">— Featured</p>
+                <h2
+                  className="font-serif leading-[1.05] tracking-tighter text-[26px] md:text-[34px]"
+                  style={{ color: 'var(--ink-strong)' }}
                 >
-                  {/* Mini theme swatch */}
-                  <div className="w-14 h-9 rounded-lg flex-shrink-0 overflow-hidden" style={{ background: theme.colors.background, border: '1px solid rgba(0,0,0,0.06)' }}>
-                    <div style={{ height: 2, background: theme.colors.accent, width: '100%' }} />
-                    <div style={{ padding: '4px 5px' }}>
-                      <div style={{ height: 3, background: theme.colors.heading, opacity: 0.7, borderRadius: 1, width: '80%', marginBottom: 3 }} />
-                      <div style={{ height: 2, background: theme.colors.body, opacity: 0.4, borderRadius: 1, width: '60%' }} />
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-gray-900 truncate">{p.title}</p>
-                    <p className="text-[11px] text-gray-400">{p.template_name} · {p.total_slides} slides</p>
-                  </div>
-                  <p className="text-[11px] text-gray-400 flex-shrink-0">{timeAgo(p.updated_at)}</p>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id) }} className="text-[12px] text-red-400 hover:text-red-600 flex-shrink-0 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">Delete</button>
-                </div>
-              )
-            })}
+                  A starting point
+                </h2>
+              </div>
+              <button
+                onClick={() => navigate('/templates')}
+                className="text-[13px] font-semibold flex items-center gap-1.5 transition-colors group"
+                style={{ color: 'var(--ink-strong)' }}
+              >
+                All templates
+                <ArrowUpRight
+                  size={13}
+                  className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+                />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-12">
+              {heroTemplates.map((t) => (
+                <FeaturedTemplateCard
+                  key={t.id}
+                  t={t}
+                  onClick={() => navigate(`/templates/${t.id}/create`)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
     </AppLayout>
+  )
+}
+
+// ── Quick action card ───────────────────────────────────────────────────────
+function QuickAction({
+  icon,
+  label,
+  title,
+  description,
+  onClick,
+  primary = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  title: string
+  description: string
+  onClick: () => void
+  primary?: boolean
+}) {
+  const fg = primary ? '#fff' : 'var(--ink-strong)'
+  const fgSoft = primary ? 'rgba(255,255,255,0.65)' : 'var(--ink-soft)'
+  const fgFaint = primary ? 'rgba(255,255,255,0.4)' : 'var(--ink-muted)'
+  const bg = primary ? 'var(--ink-strong)' : 'var(--surface)'
+
+  return (
+    <button
+      onClick={onClick}
+      className="group relative text-left p-7 rounded-2xl transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lift"
+      style={{
+        background: bg,
+        border: primary ? '1px solid transparent' : '1px solid var(--line)',
+        color: fg,
+      }}
+    >
+      <div className="flex items-center justify-between mb-10">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center"
+          style={{
+            background: primary ? 'rgba(255,255,255,0.10)' : 'rgba(10,9,7,0.05)',
+            color: fg,
+          }}
+        >
+          {icon}
+        </div>
+        <p className="eyebrow" style={{ color: fgFaint }}>{label}</p>
+      </div>
+      <p
+        className="font-serif text-[22px] leading-tight tracking-tighter mb-2"
+        style={{ color: fg }}
+      >
+        {title}
+      </p>
+      <p className="text-[13px] leading-relaxed" style={{ color: fgSoft }}>
+        {description}
+      </p>
+      <ArrowUpRight
+        size={15}
+        className="absolute top-7 right-7 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all"
+        style={{ color: fg }}
+      />
+    </button>
+  )
+}
+
+// ── Deck card ───────────────────────────────────────────────────────────────
+function DeckCard({
+  p,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
+  onOpen,
+  onDelete,
+}: {
+  p: PresentationListItem
+  menuOpen: boolean
+  onToggleMenu: () => void
+  onCloseMenu: () => void
+  onOpen: () => void
+  onDelete: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.21)
+  useLayoutEffect(() => {
+    if (!ref.current) return
+    const el = ref.current
+    const update = () => setScale(el.clientWidth / SLIDE_W)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  return (
+    <div className="group">
+      <div
+        onClick={onOpen}
+        className="relative aspect-[16/9] rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ease-out"
+        style={{
+          background: '#0A0907',
+          boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow =
+            '0 1px 1px rgba(15,14,12,0.06), 0 16px 36px -10px rgba(15,14,12,0.18)'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow =
+            '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
+      >
+        {p.preview_slide ? (
+          <div ref={ref} className="absolute inset-0">
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: SLIDE_W,
+                height: SLIDE_H,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              <SlidePreview slide={p.preview_slide} scale={1} />
+            </div>
+          </div>
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: 'var(--paper)', color: 'var(--ink-faint)' }}
+          >
+            <span className="font-serif text-sm">No preview</span>
+          </div>
+        )}
+      </div>
+
+      <div className="pt-4 px-1 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p
+            className="font-serif text-[17px] leading-tight tracking-tighter truncate"
+            style={{ color: 'var(--ink-strong)' }}
+          >
+            {p.title}
+          </p>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span className="eyebrow">{timeAgo(p.updated_at)}</span>
+            {p.total_slides > 0 && (
+              <>
+                <span className="w-0.5 h-0.5 rounded-full" style={{ background: 'var(--ink-faint)' }} />
+                <span className="eyebrow">{p.total_slides}p</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleMenu() }}
+            className="w-8 h-8 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+            style={{ color: 'var(--ink-muted)' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+              e.currentTarget.style.color = 'var(--ink-strong)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--ink-muted)'
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {menuOpen && (
+            <div
+              className="absolute right-0 top-9 z-10 rounded-xl py-1.5 w-40 shadow-lift"
+              style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => { onOpen(); onCloseMenu() }}
+                className="w-full text-left px-3.5 py-2 text-[13px] transition-colors"
+                style={{ color: 'var(--ink)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                Open
+              </button>
+              <button
+                onClick={onDelete}
+                className="w-full text-left px-3.5 py-2 text-[13px] transition-colors"
+                style={{ color: 'var(--accent)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-soft)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Featured template card ──────────────────────────────────────────────────
+function FeaturedTemplateCard({ t, onClick }: { t: TemplateListItem; onClick: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.2)
+  useLayoutEffect(() => {
+    if (!ref.current) return
+    const el = ref.current
+    const update = () => setScale(el.clientWidth / SLIDE_W)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  return (
+    <button onClick={onClick} className="group text-left">
+      <div
+        ref={ref}
+        className="aspect-[16/9] relative overflow-hidden rounded-2xl transition-all duration-300 ease-out"
+        style={{
+          background: '#0A0907',
+          boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow =
+            '0 1px 1px rgba(15,14,12,0.06), 0 16px 36px -10px rgba(15,14,12,0.18)'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow =
+            '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
+      >
+        {t.preview_slide ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SLIDE_W,
+              height: SLIDE_H,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <SlidePreview slide={t.preview_slide} theme={t.theme ?? undefined} scale={1} />
+          </div>
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: 'var(--paper)', color: 'var(--ink-faint)' }}
+          >
+            <span className="font-serif text-sm">No preview</span>
+          </div>
+        )}
+      </div>
+      <div className="pt-5 px-1">
+        <p
+          className="font-serif text-[20px] leading-tight tracking-tighter mb-1"
+          style={{ color: 'var(--ink-strong)' }}
+        >
+          {t.name}
+        </p>
+        <p className="eyebrow">{t.category}</p>
+      </div>
+    </button>
   )
 }

@@ -1,22 +1,31 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DecksPage } from './pages/DecksPage'
 import { TemplatesPage } from './pages/TemplatesPage'
 import { PresentationPage } from './pages/PresentationPage'
 import { GeneratePage } from './pages/GeneratePage'
 import { CreatePage } from './pages/CreatePage'
+import { CreateFromTemplatePage } from './pages/CreateFromTemplatePage'
 import { AuthGuard } from './components/Auth/AuthGuard'
+import { ToastProvider } from './components/ui/Toast'
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ToastProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route
           path="/dashboard"
           element={<AuthGuard><DashboardPage /></AuthGuard>}
+        />
+        <Route
+          path="/decks"
+          element={<AuthGuard><DecksPage /></AuthGuard>}
         />
         <Route
           path="/create"
@@ -27,6 +36,10 @@ export default function App() {
           element={<AuthGuard><TemplatesPage /></AuthGuard>}
         />
         <Route
+          path="/templates/:id/create"
+          element={<AuthGuard><CreateFromTemplatePage /></AuthGuard>}
+        />
+        <Route
           path="/presentations/:id"
           element={<AuthGuard><PresentationPage /></AuthGuard>}
         />
@@ -34,8 +47,9 @@ export default function App() {
           path="/generate/:jobId"
           element={<AuthGuard><GeneratePage /></AuthGuard>}
         />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<LandingPage />} />
       </Routes>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

@@ -1,178 +1,260 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Home,
   LayoutTemplate,
   Library,
-  Settings,
-  MoreHorizontal,
-  UserPlus,
-  MessageSquare,
-  Trash2,
   Search,
-  Star,
-  Clock,
-  ChevronDown,
+  Home,
+  Settings,
+  ChevronsLeft,
+  ChevronsRight,
+  Plus,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useAuthStore } from '../../store/authStore'
+import { useToast } from '../ui/Toast'
 
-function IconStrip() {
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const toast = useToast()
+  const handleLogout = async () => {
+    const firstName = user?.full_name?.split(' ')[0]
+    const toastId = toast.loading('Signing you out…', 'Clearing your session.')
+    await new Promise((r) => setTimeout(r, 700))
+    logout()
+    toast.update(toastId, {
+      variant: 'success',
+      title: firstName ? `Signed out. See you, ${firstName}.` : 'Signed out.',
+      description: 'You can sign back in anytime.',
+    })
+    await new Promise((r) => setTimeout(r, 900))
+    navigate('/login')
+  }
 
   const initials = user?.full_name
     ? user.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() ?? 'U'
 
-  const navIcons = [
+  const primary = [
     { icon: Home, label: 'Home', path: '/dashboard' },
-    { icon: LayoutTemplate, label: 'Templates', path: '/templates' },
-    { icon: Library, label: 'Library', path: '/dashboard' },
-    { icon: Settings, label: 'Settings', path: '/settings' },
+    { icon: LayoutTemplate, label: 'Decks', path: '/decks' },
+    { icon: Library, label: 'Templates', path: '/templates' },
   ]
 
-  return (
-    <div className="w-14 flex-shrink-0 flex flex-col items-center py-3 gap-1" style={{ background: '#0f172a' }}>
-      {/* Logo */}
-      <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-2 flex-shrink-0" style={{ background: '#6366f1' }}>
-        <span className="text-white font-bold text-[10px] tracking-tight">WAC</span>
-      </div>
+  const isActive = (path: string) =>
+    path === '/dashboard'
+      ? location.pathname === '/dashboard'
+      : location.pathname.startsWith(path)
 
-      {/* Nav icons */}
-      <div className="flex flex-col items-center gap-0.5 flex-1">
-        {navIcons.map(({ icon: Icon, label, path }) => {
-          const active = location.pathname === path
+  if (collapsed) {
+    return (
+      <aside
+        className="w-[60px] flex-shrink-0 flex flex-col items-center py-5 gap-1"
+        style={{ background: 'var(--paper-2)', borderRight: '1px solid var(--line)' }}
+      >
+        <button
+          onClick={onToggle}
+          className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+          style={{ background: 'var(--ink-strong)', color: '#fff' }}
+        >
+          <span className="text-[10px] font-bold tracking-tight">WAC</span>
+        </button>
+        {primary.map(({ icon: Icon, label, path }) => {
+          const active = isActive(path)
           return (
             <button
               key={label}
               title={label}
               onClick={() => navigate(path)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
               style={{
-                color: active ? '#fff' : 'rgba(148,163,184,0.8)',
-                background: active ? 'rgba(99,102,241,0.25)' : 'transparent',
+                background: active ? 'var(--ink-strong)' : 'transparent',
+                color: active ? '#fff' : 'var(--ink-soft)',
               }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.color = '#fff' }}
-              onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(148,163,184,0.8)' } }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                  e.currentTarget.style.color = 'var(--ink-strong)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'var(--ink-soft)'
+                }
+              }}
             >
-              <Icon size={17} />
+              <Icon size={16} />
             </button>
           )
         })}
+        <div className="flex-1" />
         <button
-          title="More"
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-          style={{ color: 'rgba(148,163,184,0.8)' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.color = '#fff' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(148,163,184,0.8)' }}
+          onClick={onToggle}
+          className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors"
+          style={{ color: 'var(--ink-muted)' }}
+          title="Expand"
         >
-          <MoreHorizontal size={17} />
+          <ChevronsRight size={16} />
         </button>
-      </div>
-
-      {/* Bottom */}
-      <div className="flex flex-col items-center gap-1">
-        {[UserPlus, MessageSquare].map((Icon, i) => (
-          <button
-            key={i}
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-            style={{ color: 'rgba(148,163,184,0.6)' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.color = '#fff' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(148,163,184,0.6)' }}
-          >
-            <Icon size={16} />
-          </button>
-        ))}
         <button
+          onClick={handleLogout}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold mt-2"
+          style={{ background: 'var(--ink-strong)', color: '#fff' }}
           title={user?.full_name ?? 'Account'}
-          onClick={() => { logout(); navigate('/login') }}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold mt-1 transition-opacity hover:opacity-80"
-          style={{ background: '#6366f1', fontSize: '11px' }}
         >
           {initials}
         </button>
-      </div>
-    </div>
-  )
-}
-
-function NavPanel() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const { user } = useAuthStore()
-
-  const navItems = [
-    { icon: LayoutTemplate, label: 'All Decks', path: '/dashboard', match: '/dashboard' },
-    { icon: Search, label: 'Search', path: '/dashboard', shortcut: 'Ctrl+K' },
-    { icon: Clock, label: 'Recently viewed', path: '/dashboard' },
-    { icon: Star, label: 'Favorites', path: '/dashboard' },
-  ]
+      </aside>
+    )
+  }
 
   return (
-    <div className="w-56 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col py-3 overflow-y-hidden shadow-sm">
-      {/* Workspace */}
-      <div className="px-3 mb-2">
-        <button className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-gray-50 transition-colors text-left">
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-gray-900 truncate leading-tight">WAC Deck Studio</p>
-            <p className="text-[11px] text-gray-400 leading-tight truncate mt-0.5">{user?.email}</p>
-          </div>
-          <ChevronDown size={13} className="text-gray-400 flex-shrink-0" />
-        </button>
-      </div>
-
-      {/* Upgrade */}
-      <div className="px-3 mb-3">
-        <button className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border"
-          style={{ borderColor: '#e0e7ff', color: '#6366f1', background: '#f5f3ff' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#ede9fe'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#f5f3ff'}
+    <aside
+      className="w-[268px] flex-shrink-0 flex flex-col"
+      style={{ background: 'var(--paper-2)', borderRight: '1px solid var(--line)' }}
+    >
+      {/* Workspace header */}
+      <div className="px-5 pt-6 pb-5 flex items-center gap-3">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: 'var(--ink-strong)', color: '#fff' }}
         >
-          <span>✦</span>
-          <span>Upgrade for more AI</span>
+          <span className="text-[10px] font-bold tracking-tight">WAC</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-serif text-[17px] leading-tight tracking-tighter" style={{ color: 'var(--ink-strong)' }}>
+            Deck Studio
+          </p>
+          <p className="text-[11.5px] truncate mt-0.5" style={{ color: 'var(--ink-muted)' }}>
+            {user?.email ?? 'demo'}
+          </p>
+        </div>
+        <button
+          onClick={onToggle}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: 'var(--ink-muted)' }}
+          title="Collapse"
+        >
+          <ChevronsLeft size={14} />
         </button>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-2">
-        {navItems.map(({ icon: Icon, label, path, shortcut, match }) => {
-          const active = location.pathname === (match ?? path) && label === 'All Decks'
+      {/* Primary CTA */}
+      <div className="px-3 pb-3">
+        <button
+          onClick={() => navigate('/create')}
+          className="w-full h-11 px-4 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2 transition-all"
+          style={{ background: 'var(--ink-strong)', color: '#fff' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#2A2620')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ink-strong)')}
+        >
+          <Plus size={14} />
+          New deck
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="px-3 pb-3">
+        <button
+          className="w-full flex items-center gap-2 px-3 h-9 rounded-xl text-[13px] transition-colors"
+          style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--ink-muted)' }}
+        >
+          <Search size={13} />
+          <span className="flex-1 text-left">Search</span>
+        </button>
+      </div>
+
+      {/* Primary nav */}
+      <nav className="px-2 flex flex-col gap-0.5">
+        {primary.map(({ icon: Icon, label, path }) => {
+          const active = isActive(path)
           return (
             <button
               key={label}
               onClick={() => navigate(path)}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-colors mb-0.5 ${
-                active ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+              className="flex items-center gap-3 px-3 h-9 rounded-xl text-[13px] transition-all"
+              style={{
+                background: active ? 'var(--surface)' : 'transparent',
+                color: active ? 'var(--ink-strong)' : 'var(--ink-soft)',
+                fontWeight: active ? 600 : 500,
+                boxShadow: active ? '0 1px 2px rgba(10,9,7,0.06)' : 'none',
+              }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = 'rgba(10,9,7,0.05)'
+                  e.currentTarget.style.color = 'var(--ink-strong)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'var(--ink-soft)'
+                }
+              }}
             >
-              <Icon size={14} className="flex-shrink-0" style={{ color: active ? '#6366f1' : undefined }} />
+              <Icon size={15} />
               <span className="flex-1 text-left">{label}</span>
-              {shortcut && <span className="text-[10px] text-gray-300 font-medium">{shortcut}</span>}
             </button>
           )
         })}
-
-        <div className="mt-5 mb-1.5 px-2.5">
-          <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest">Folders</p>
-        </div>
       </nav>
 
-      {/* Trash */}
-      <div className="px-2 mt-1">
-        <button className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors">
-          <Trash2 size={14} />
-          <span>Trash</span>
+      <div className="flex-1" />
+
+      {/* Bottom row */}
+      <div
+        className="px-3 pb-4 pt-3 flex items-center gap-2"
+        style={{ borderTop: '1px solid var(--line)' }}
+      >
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2.5 flex-1 px-2 h-10 rounded-xl transition-colors text-left min-w-0"
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(10,9,7,0.05)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        >
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+            style={{ background: 'var(--ink-strong)', color: '#fff' }}
+          >
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12.5px] font-semibold truncate leading-tight" style={{ color: 'var(--ink-strong)' }}>
+              {user?.full_name ?? 'Account'}
+            </p>
+            <p className="text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>Sign out</p>
+          </div>
+        </button>
+        <button
+          title="Settings"
+          className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
+          style={{ color: 'var(--ink-muted)' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(10,9,7,0.05)'
+            e.currentTarget.style.color = 'var(--ink-strong)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--ink-muted)'
+          }}
+        >
+          <Settings size={15} />
         </button>
       </div>
-    </div>
+    </aside>
   )
 }
 
+// ── AppLayout ────────────────────────────────────────────────────────────────
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const [collapsed, setCollapsed] = useState(false)
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <NavPanel />
-      <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--paper)' }}>
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--paper)' }}>{children}</main>
     </div>
   )
 }

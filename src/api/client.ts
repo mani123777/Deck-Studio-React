@@ -50,12 +50,20 @@ export const authApi = {
   me: () => api.get('/auth/me'),
 }
 
+// Themes
+export const themesApi = {
+  list: () => api.get('/themes'),
+  get: (id: string) => api.get(`/themes/${id}`),
+}
+
 // Templates
 export const templatesApi = {
   list: () => api.get('/templates'),
   get: (id: string) => api.get(`/templates/${id}`),
   preview: (id: string) => api.get(`/templates/${id}/preview`),
   getPreview: (id: string) => api.get(`/templates/${id}/preview`),
+  generateFromPrompt: (id: string, prompt: string, title?: string, slide_count?: number) =>
+    api.post(`/templates/${id}/generate-from-prompt`, { prompt, title, slide_count }),
 }
 
 // Generation
@@ -91,10 +99,37 @@ export const presentationsApi = {
   delete: (id: string) => api.delete(`/presentations/${id}`),
 }
 
+// Import
+export const importApi = {
+  importPptx: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ id: string; title: string; total_slides: number }>('/import/pptx', form)
+  },
+}
+
 // Export
 export const exportApi = {
   start: (presentation_id: string, format: string) =>
     api.post(`/export/${presentation_id}/${format}`),
   status: (job_id: string) => api.get(`/export/jobs/${job_id}`),
-  downloadUrl: (job_id: string) => `${BASE_URL}/api/v1/export/download/${job_id}`,
+  /** Authenticated download — fetches via axios (sends Authorization header) then
+   *  triggers a browser save dialog using a temporary blob URL. */
+  download: async (job_id: string, filename: string) => {
+    const response = await api.get(`/export/download/${job_id}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+}
+
+// Share — public read-only HTML preview link (no account needed to view)
+export const shareApi = {
+  url: (presentation_id: string) =>
+    `${BASE_URL}/api/v1/share/view/${presentation_id}`,
 }

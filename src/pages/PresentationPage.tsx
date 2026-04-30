@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { presentationsApi, exportApi } from '../api/client'
+import { presentationsApi, exportApi, themesApi, shareApi } from '../api/client'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { PropertyPanel } from '../components/Presentation/SlideEditor'
 import { ThemePanel } from '../components/Presentation/ThemePanel'
+import { SlideChat } from '../components/Presentation/SlideChat'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
 import type { PresentationDetail, Slide, Styling, Theme } from '../types'
 
 type SaveStatus = 'idle' | 'saving' | 'saved'
 type CtxMenu = { index: number; x: number; y: number } | null
-type ExportReady = { jobId: string } | null
+type ExportReady = { jobId: string; format: string } | null
+
+const SLIDE_W = 1280
+const SLIDE_H = 720
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -69,12 +73,10 @@ function applyPresetToSlides(slides: Slide[], t: ThemePreset): Slide[] {
 }
 
 function getCanvasBg(hex: string): string {
-  if (!hex || !hex.startsWith('#') || hex.length < 7) return '#111118'
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return lum > 0.5 ? '#c4c8d0' : '#111118'
+  // Use the theme's background as the canvas surround when available.
+  // Falls back to a neutral mid-gray only when no valid hex is provided.
+  if (!hex || !hex.startsWith('#') || hex.length < 7) return '#1A1814'
+  return hex
 }
 
 function makeBlankSlide(order: number, theme: ThemePreset): Slide {
@@ -110,16 +112,25 @@ export function PresentationPage() {
   const [presentation, setPresentation] = useState<PresentationDetail | null>(null)
   const [slides, setSlides]             = useState<Slide[]>([])
   const [activeSlide, setActiveSlide]   = useState(0)
-  const [editMode, setEditMode]         = useState(false)
+
   const [themeOpen, setThemeOpen]       = useState(false)
   const [saveStatus, setSaveStatus]     = useState<SaveStatus>('idle')
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [editingBlockId, setEditingBlockId]   = useState<string | null>(null)
   const [activeTheme, setActiveTheme]   = useState<ThemePreset>(getThemeById('vortex'))
   const [canvasScale, setCanvasScale]   = useState(0.72)
+  const [presentMode, setPresentMode]   = useState(false)
+  const [presentSlide, setPresentSlide] = useState(0)
 
   // Context menu for slide strip
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null)
+
+  // AI Chat panel
+  const [chatOpen, setChatOpen] = useState(false)
+
+  // Drag-and-drop for slide reordering
+  const [dragIdx, setDragIdx]   = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
 
   // Download modal
   const [downloadOpen, setDownloadOpen]   = useState(false)
@@ -128,16 +139,49 @@ export function PresentationPage() {
   const [exportReady, setExportReady]     = useState<ExportReady>(null)
   const [exportError, setExportError]     = useState<string | null>(null)
 
+  // Share link
+  const [shareUrl, setShareUrl]   = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const centerRef   = useRef<HTMLDivElement>(null)
+  const slidesRef   = useRef<Slide[]>([])
+
+  // Keep slidesRef in sync so handleApplyTheme always has the latest slides
+  useEffect(() => { slidesRef.current = slides }, [slides])
+
+  // DB theme used as the canvas/preview backdrop (full theme object from API).
+  const [dbTheme, setDbTheme] = useState<Theme | null>(null)
 
   // Load presentation
+  // The DB `theme_id` is a UUID FK (not a preset name like 'vortex'). We fetch
+  // the real theme by id so the canvas background, fonts, and SlidePreview
+  // fallbacks match the template the user picked. We do NOT overwrite slide
+  // styling on load — the seeded slides already have correct fonts/colors per
+  // block, and overwriting them with a frontend preset is what made every
+  // copy look black. Only when the user explicitly picks a new theme via
+  // ThemePanel do we recolor slides.
   useEffect(() => {
     if (!id) return
-    presentationsApi.get(id).then((r) => {
+    presentationsApi.get(id).then(async (r) => {
       setPresentation(r.data)
       setSlides(r.data.slides)
-      setActiveTheme(getThemeById(r.data.theme_id))
+
+      const savedPreset = localStorage.getItem(`theme_preset_${id}`)
+      if (savedPreset) {
+        const preset = getThemeById(savedPreset)
+        setActiveTheme(preset)
+        setSlides(applyPresetToSlides(r.data.slides, preset))
+        setDbTheme(presetToTheme(preset))
+      } else if (r.data.theme_id) {
+        // Fetch the actual DB theme for canvas/fallback rendering.
+        try {
+          const themeRes = await themesApi.get(r.data.theme_id)
+          setDbTheme(themeRes.data as Theme)
+        } catch {
+          /* fall through — render will use whatever defaults exist */
+        }
+      }
     })
   }, [id])
 
@@ -163,6 +207,25 @@ export function PresentationPage() {
     return () => window.removeEventListener('click', close)
   }, [ctxMenu])
 
+  // Present mode keyboard navigation
+  useEffect(() => {
+    if (!presentMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')           setPresentMode(false)
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ')
+        setPresentSlide((p) => Math.min(p + 1, slides.length - 1))
+      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')
+        setPresentSlide((p) => Math.max(p - 1, 0))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [presentMode, slides.length])
+
+  const enterPresent = () => {
+    setPresentSlide(activeSlide)
+    setPresentMode(true)
+  }
+
   // Auto-save
   const isFirstRender = useRef(true)
   useEffect(() => {
@@ -184,16 +247,14 @@ export function PresentationPage() {
 
   // ── Block interactions ──────────────────────────────────────────────────────
   const handleBlockClick = useCallback((blockId: string) => {
-    if (!editMode) return
     if (!blockId) { setSelectedBlockId(null); setEditingBlockId(null); return }
     setSelectedBlockId(blockId)
     setEditingBlockId(null)
-  }, [editMode])
+  }, [])
 
   const handleBlockDoubleClick = useCallback((blockId: string) => {
-    if (!editMode) return
     setEditingBlockId(blockId)
-  }, [editMode])
+  }, [])
 
   const handleBlockContentChange = useCallback((blockId: string, content: string) => {
     setSlides((prev) =>
@@ -231,14 +292,21 @@ export function PresentationPage() {
   }
 
   // ── Theme ───────────────────────────────────────────────────────────────────
-  const handleApplyTheme = (theme: ThemePreset) => {
+  const handleApplyTheme = useCallback((theme: ThemePreset) => {
+    const updated = applyPresetToSlides(slidesRef.current, theme)
+    setSlides(updated)
     setActiveTheme(theme)
-    setSlides((prev) => applyPresetToSlides(prev, theme))
+    setDbTheme(presetToTheme(theme))
     setThemeOpen(false)
     if (id) {
-      presentationsApi.update(id, { theme_id: theme.id })
+      // Persist preset name in localStorage (the DB theme_id is a UUID FK,
+      // not a preset name, so we can't save 'vortex' there directly).
+      localStorage.setItem(`theme_preset_${id}`, theme.id)
+      // Save slides immediately — don't rely on the debounce in case the user
+      // closes the tab before it fires.
+      presentationsApi.update(id, { slides: updated })
     }
-  }
+  }, [id])
 
   // ── Slide management ────────────────────────────────────────────────────────
   const addSlide = () => {
@@ -287,6 +355,53 @@ export function PresentationPage() {
     setCtxMenu(null)
   }
 
+  // ── Drag-and-drop reorder ───────────────────────────────────────────────────
+  const handleDragStart = (index: number) => {
+    setDragIdx(index)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    setDragOver(index)
+  }
+
+  const handleDrop = (targetIndex: number) => {
+    if (dragIdx === null || dragIdx === targetIndex) { setDragIdx(null); setDragOver(null); return }
+    setSlides((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(dragIdx, 1)
+      next.splice(targetIndex, 0, moved)
+      return next.map((s, i) => ({ ...s, order: i + 1 }))
+    })
+    if (activeSlide === dragIdx) setActiveSlide(targetIndex)
+    else if (activeSlide > Math.min(dragIdx, targetIndex) && activeSlide <= Math.max(dragIdx, targetIndex)) {
+      setActiveSlide(dragIdx < targetIndex ? activeSlide - 1 : activeSlide + 1)
+    }
+    setDragIdx(null)
+    setDragOver(null)
+  }
+
+  const handleDragEnd = () => { setDragIdx(null); setDragOver(null) }
+
+  // ── Slide update from chat ──────────────────────────────────────────────────
+  const handleSlideUpdate = useCallback((updated: Slide) => {
+    setSlides((prev) => prev.map((s, i) => i === activeSlide ? updated : s))
+  }, [activeSlide])
+
+  // ── Share link ──────────────────────────────────────────────────────────────
+  const handleShare = async () => {
+    if (!id) return
+    const url = shareApi.url(id)
+    setShareUrl(url)
+    setShareCopied(false)
+    try {
+      await navigator.clipboard.writeText(url)
+      setShareCopied(true)
+    } catch {
+      // clipboard may be blocked — user can still copy from the input
+    }
+  }
+
   // ── Export / Download ───────────────────────────────────────────────────────
   const handleDownload = async (format: 'pptx' | 'html') => {
     if (!id) return
@@ -303,7 +418,7 @@ export function PresentationPage() {
         if (s.status === 'completed') {
           clearInterval(poll)
           setExporting(false)
-          setExportReady({ jobId: data.job_id })
+          setExportReady({ jobId: data.job_id, format })
         } else if (s.status === 'failed') {
           clearInterval(poll)
           setExporting(false)
@@ -317,8 +432,10 @@ export function PresentationPage() {
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const themeObj      = presetToTheme(activeTheme)
-  const canvasBg      = getCanvasBg(activeTheme.colors.background)
+  // Prefer the DB theme (matches the template the user picked). Fall back to
+  // the preset only if the API fetch hasn't returned yet.
+  const themeObj      = dbTheme ?? presetToTheme(activeTheme)
+  const canvasBg      = getCanvasBg(themeObj.colors.background)
   const currentSlide  = slides[activeSlide]
   const selectedBlock = currentSlide?.blocks.find((b) => b.id === selectedBlockId) ?? null
 
@@ -335,43 +452,92 @@ export function PresentationPage() {
 
       {/* ── Toolbar ── */}
       <div style={{
-        height: 52, flexShrink: 0, zIndex: 20,
-        background: '#13131f',
+        height: 56, flexShrink: 0, zIndex: 20,
+        background: '#0A0907',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px',
+        display: 'flex', alignItems: 'center', gap: 10, padding: '0 18px',
       }}>
         <button
           onClick={() => navigate('/dashboard')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#fff'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)'}
+          style={{
+            background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer',
+            color: 'rgba(255,255,255,0.65)', borderRadius: 10, lineHeight: 1,
+            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.10)'
+            ;(e.currentTarget as HTMLElement).style.color = '#fff'
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
+            ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.65)'
+          }}
         >←</button>
 
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <span style={{ color: '#fff', fontSize: 9, fontWeight: 800, letterSpacing: -0.3 }}>WAC</span>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ color: '#fff', fontSize: 9, fontWeight: 800, letterSpacing: 0.2 }}>WAC</span>
         </div>
 
-        <span style={{ flex: 1, color: '#fff', fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: 0.1 }}>
-          {presentation.title}
-        </span>
-
-        {saveStatus !== 'idle' && (
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <span style={{
-            fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
-            background: saveStatus === 'saving' ? 'rgba(251,191,36,0.12)' : 'rgba(74,222,128,0.12)',
-            color:      saveStatus === 'saving' ? '#fbbf24' : '#4ade80',
+            color: '#fff', fontSize: 14, fontWeight: 500, overflow: 'hidden',
+            textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: -0.2,
+            fontFamily: 'Fraunces, serif',
           }}>
-            {saveStatus === 'saving' ? 'Saving…' : '✓ Saved'}
+            {presentation.title}
           </span>
-        )}
+          {saveStatus !== 'idle' && (
+            <span style={{
+              fontSize: 10, fontWeight: 500, letterSpacing: '0.16em', textTransform: 'uppercase',
+              fontFamily: 'JetBrains Mono, monospace',
+              color: saveStatus === 'saving' ? 'rgba(255,255,255,0.45)' : '#7DD3A8',
+              marginTop: 1,
+            }}>
+              {saveStatus === 'saving' ? '— Saving…' : '— Saved'}
+            </span>
+          )}
+        </div>
 
-        <TBtn label="Theme" active={themeOpen} onClick={() => setThemeOpen((o) => !o)} accent="#7c3aed" />
-        <TBtn
-          label={editMode ? 'Done' : 'Edit'}
-          active={editMode}
-          onClick={() => { setEditMode((m) => !m); setSelectedBlockId(null); setEditingBlockId(null) }}
-          accent="#6366f1"
-        />
+        <TBtn label="Theme" active={themeOpen} onClick={() => setThemeOpen((o) => !o)} />
+        <TBtn label="AI" active={chatOpen} onClick={() => setChatOpen((o) => !o)} />
+        <button
+          onClick={enterPresent}
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 999,
+            color: '#fff', height: 36, padding: '0 16px',
+            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 6,
+            whiteSpace: 'nowrap', letterSpacing: -0.1,
+            transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
+        >
+          ▶ Present
+        </button>
+
+        {/* Share button */}
+        <button
+          onClick={handleShare}
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 999,
+            color: '#fff', height: 36, padding: '0 16px',
+            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 6,
+            whiteSpace: 'nowrap', letterSpacing: -0.1,
+            transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
+          title="Public read-only link — anyone can open it without an account"
+        >
+          🔗 Share
+        </button>
 
         {/* Download button */}
         <div style={{ position: 'relative' }}>
@@ -379,18 +545,22 @@ export function PresentationPage() {
             onClick={() => { setDownloadOpen((o) => !o); setExportReady(null); setExportError(null) }}
             disabled={exporting}
             style={{
-              background: exporting ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.2)',
-              border: '1px solid rgba(99,102,241,0.5)',
-              color: exporting ? 'rgba(165,180,252,0.5)' : '#a5b4fc',
-              borderRadius: 7, padding: '5px 14px',
+              background: '#fff',
+              border: 'none',
+              color: '#0A0907',
+              borderRadius: 999, height: 36, padding: '0 16px',
               fontSize: 13, fontWeight: 600, cursor: exporting ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', gap: 6,
-              transition: 'all 0.15s', whiteSpace: 'nowrap',
+              transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+              whiteSpace: 'nowrap', letterSpacing: -0.1,
+              opacity: exporting ? 0.6 : 1,
             }}
+            onMouseEnter={e => { if (!exporting) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.88)' }}
+            onMouseLeave={e => { if (!exporting) (e.currentTarget as HTMLElement).style.background = '#fff' }}
           >
             {exporting ? (
               <>
-                <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(165,180,252,0.3)', borderTopColor: '#a5b4fc', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(10,9,7,0.25)', borderTopColor: '#0A0907', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                 Exporting {exportProgress}%
               </>
             ) : '↓ Download'}
@@ -439,6 +609,47 @@ export function PresentationPage() {
         </div>
       </div>
 
+      {/* Share URL banner */}
+      {shareUrl && (
+        <div style={{
+          background: '#0f1f2d', color: '#7dd3fc',
+          padding: '10px 20px', fontSize: 12, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        }}>
+          <span style={{ fontWeight: 600 }}>{shareCopied ? '✓ Link copied — share it with anyone:' : '🔗 Public link (anyone can view, no login):'}</span>
+          <input
+            readOnly
+            value={shareUrl}
+            onFocus={e => e.currentTarget.select()}
+            style={{
+              flex: '0 1 480px', minWidth: 0, background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
+              color: '#e2e8f0', padding: '4px 8px', fontSize: 12, fontFamily: 'monospace',
+            }}
+          />
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(shareUrl)
+                setShareCopied(true)
+              } catch { /* noop */ }
+            }}
+            style={{ background: 'none', border: '1px solid rgba(125,211,252,0.4)', color: '#7dd3fc', borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Copy
+          </button>
+          <a
+            href={shareUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#7dd3fc', fontSize: 11, fontWeight: 600 }}
+          >
+            Open ↗
+          </a>
+          <button onClick={() => { setShareUrl(null); setShareCopied(false) }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
+      )}
+
       {/* Export ready / error banner */}
       {(exportReady || exportError) && (
         <div style={{
@@ -450,12 +661,12 @@ export function PresentationPage() {
           {exportReady ? (
             <>
               <span>✓ Your file is ready — you can download now</span>
-              <a
-                href={exportApi.downloadUrl(exportReady.jobId)}
-                style={{ color: '#86efac', fontWeight: 700, textDecoration: 'underline' }}
+              <button
+                onClick={() => exportApi.download(exportReady.jobId, `presentation.${exportReady.format}`)}
+                style={{ background: 'none', border: 'none', color: '#86efac', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
               >
                 Download
-              </a>
+              </button>
               <button onClick={() => setExportReady(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
             </>
           ) : (
@@ -499,7 +710,21 @@ export function PresentationPage() {
           {/* Slide thumbnails */}
           <div style={{ padding: '4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {slides.map((s, i) => (
-              <div key={i} style={{ position: 'relative' }}>
+              <div
+                key={i}
+                draggable
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={handleDragEnd}
+                style={{
+                  position: 'relative',
+                  opacity: dragIdx === i ? 0.4 : 1,
+                  transition: 'opacity 0.15s',
+                  outline: dragOver === i && dragIdx !== i ? '2px solid #6366f1' : 'none',
+                  borderRadius: 8,
+                }}
+              >
                 <button
                   onClick={() => { setActiveSlide(i); setSelectedBlockId(null); setEditingBlockId(null) }}
                   onContextMenu={(e) => {
@@ -507,7 +732,7 @@ export function PresentationPage() {
                     e.stopPropagation()
                     setCtxMenu({ index: i, x: e.clientX, y: e.clientY })
                   }}
-                  style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                  style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'grab' }}
                 >
                   <div style={{
                     border: `2px solid ${i === activeSlide ? '#6366f1' : 'rgba(255,255,255,0.08)'}`,
@@ -534,7 +759,7 @@ export function PresentationPage() {
             transition: 'background 0.4s ease',
           }}
           onClick={() => {
-            if (editMode) { setSelectedBlockId(null); setEditingBlockId(null) }
+            setSelectedBlockId(null); setEditingBlockId(null)
             setDownloadOpen(false)
           }}
         >
@@ -543,11 +768,11 @@ export function PresentationPage() {
               slide={currentSlide}
               theme={themeObj}
               scale={canvasScale}
-              selectedBlockId={editMode ? selectedBlockId : null}
-              editingBlockId={editMode ? editingBlockId : null}
-              onBlockClick={editMode ? handleBlockClick : undefined}
-              onBlockDoubleClick={editMode ? handleBlockDoubleClick : undefined}
-              onBlockContentChange={editMode ? handleBlockContentChange : undefined}
+              selectedBlockId={selectedBlockId}
+              editingBlockId={editingBlockId}
+              onBlockClick={handleBlockClick}
+              onBlockDoubleClick={handleBlockDoubleClick}
+              onBlockContentChange={handleBlockContentChange}
             />
           )}
 
@@ -557,12 +782,12 @@ export function PresentationPage() {
             pointerEvents: 'none', whiteSpace: 'nowrap',
           }}>
             {currentSlide?.order} / {slides.length}
-            {editMode && '  ·  Click to select  ·  Double-click to edit text'}
+            {'  ·  Click to select  ·  Double-click to edit text'}
           </div>
         </div>
 
         {/* Right property panel */}
-        {editMode && selectedBlock && (
+        {selectedBlock && (
           <div style={{
             width: 232, flexShrink: 0,
             background: '#13131f',
@@ -575,6 +800,22 @@ export function PresentationPage() {
               onContentChange={(c) => updateContent(selectedBlock.id, c)}
               onImageUpload={(url) => updateContent(selectedBlock.id, url)}
               dark
+            />
+          </div>
+        )}
+
+        {/* Right AI chat panel */}
+        {chatOpen && (
+          <div style={{
+            width: 300, flexShrink: 0,
+            borderLeft: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
+          }}>
+            <SlideChat
+              slide={currentSlide ?? null}
+              presentationId={id ?? ''}
+              onSlideUpdate={handleSlideUpdate}
             />
           </div>
         )}
@@ -616,6 +857,17 @@ export function PresentationPage() {
         </div>
       )}
 
+      {/* ── Present mode overlay ── */}
+      {presentMode && (
+        <PresentOverlay
+          slides={slides}
+          theme={themeObj}
+          current={presentSlide}
+          onChangeCurrent={setPresentSlide}
+          onExit={() => setPresentMode(false)}
+        />
+      )}
+
       {/* Theme panel overlay */}
       {themeOpen && (
         <ThemePanel
@@ -633,18 +885,21 @@ export function PresentationPage() {
 
 // ── Toolbar button ─────────────────────────────────────────────────────────────
 
-function TBtn({ label, active, onClick, accent }: { label: string; active: boolean; onClick: () => void; accent: string }) {
+function TBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       style={{
-        background: active ? `${accent}28` : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${active ? accent : 'rgba(255,255,255,0.1)'}`,
-        color: active ? '#fff' : 'rgba(255,255,255,0.7)',
-        borderRadius: 7, padding: '5px 14px',
-        fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
-        whiteSpace: 'nowrap',
+        background: active ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+        border: '1px solid ' + (active ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)'),
+        color: active ? '#fff' : 'rgba(255,255,255,0.75)',
+        borderRadius: 999, height: 36, padding: '0 16px',
+        fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+        whiteSpace: 'nowrap', letterSpacing: -0.1,
       }}
+      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.10)' }}
+      onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
     >{label}</button>
   )
 }
@@ -669,5 +924,127 @@ function CtxItem({ label, icon, onClick, disabled, danger }: {
       <span style={{ width: 16, textAlign: 'center', fontSize: 14 }}>{icon}</span>
       {label}
     </button>
+  )
+}
+
+// ── Present mode overlay ──────────────────────────────────────────────────────
+
+function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
+  slides: Slide[]
+  theme: Theme
+  current: number
+  onChangeCurrent: (i: number) => void
+  onExit: () => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+
+  useEffect(() => {
+    const compute = () => {
+      if (!containerRef.current) return
+      const { clientWidth, clientHeight } = containerRef.current
+      setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [])
+
+  const slide = slides[current]
+  const isFirst = current === 0
+  const isLast  = current === slides.length - 1
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: '#000',
+        display: 'flex', flexDirection: 'column',
+      }}
+    >
+      {/* Slide area */}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+        onClick={() => onChangeCurrent(Math.min(current + 1, slides.length - 1))}
+      >
+        {slide && (
+          <SlidePreview slide={slide} theme={theme} scale={scale} />
+        )}
+      </div>
+
+      {/* Controls bar */}
+      <div style={{
+        height: 52, flexShrink: 0,
+        background: 'rgba(0,0,0,0.85)',
+        backdropFilter: 'blur(12px)',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 24px',
+      }}>
+        {/* Slide counter */}
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: 'Inter, sans-serif', minWidth: 60 }}>
+          {current + 1} / {slides.length}
+        </span>
+
+        {/* Nav arrows */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <NavBtn label="←" disabled={isFirst} onClick={() => onChangeCurrent(current - 1)} />
+
+          {/* Dot indicators */}
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center', maxWidth: 320, overflow: 'hidden' }}>
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); onChangeCurrent(i) }}
+                style={{
+                  width:  i === current ? 20 : 6,
+                  height: 6,
+                  borderRadius: 3,
+                  border: 'none',
+                  background: i === current ? '#6366f1' : 'rgba(255,255,255,0.25)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.2s',
+                  flexShrink: 0,
+                }}
+              />
+            ))}
+          </div>
+
+          <NavBtn label="→" disabled={isLast} onClick={() => onChangeCurrent(current + 1)} />
+        </div>
+
+        {/* Exit */}
+        <button
+          onClick={onExit}
+          style={{
+            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+            color: 'rgba(255,255,255,0.6)', borderRadius: 7,
+            padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            minWidth: 60,
+          }}
+        >
+          ✕ Exit
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function NavBtn({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      disabled={disabled}
+      style={{
+        width: 36, height: 36, borderRadius: 8,
+        background: disabled ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.1)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        color: disabled ? 'rgba(255,255,255,0.2)' : '#fff',
+        fontSize: 16, cursor: disabled ? 'default' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >{label}</button>
   )
 }

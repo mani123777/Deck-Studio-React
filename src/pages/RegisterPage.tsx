@@ -1,123 +1,219 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/client'
+import { useToast } from '../components/ui/Toast'
+import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 export function RegisterPage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [form, setForm] = useState({ email: '', password: '', full_name: '' })
+  const [show, setShow] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const ready =
+    form.email.trim().length > 0 &&
+    form.password.length >= 6 &&
+    form.full_name.trim().length > 0
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!ready) return
     setError('')
     setLoading(true)
+    const toastId = toast.loading('Creating your account…', 'Setting up your workspace.')
     try {
       await authApi.register(form.email, form.password, form.full_name)
+      toast.update(toastId, {
+        variant: 'success',
+        title: 'Account created.',
+        description: 'Sign in to get started.',
+      })
+      await new Promise((r) => setTimeout(r, 900))
       navigate('/login')
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? 'Registration failed')
+      const msg = err.response?.data?.detail ?? 'Registration failed'
+      setError(msg)
+      toast.update(toastId, {
+        variant: 'error',
+        title: 'Could not create account',
+        description: msg,
+      })
     } finally {
       setLoading(false)
     }
   }
 
-  const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#f8fafc' }}>
-      {/* Left — dark brand panel */}
-      <div className="hidden lg:flex w-[480px] flex-shrink-0 flex-col justify-between p-10 relative overflow-hidden" style={{ background: '#0f172a' }}>
-        <div className="absolute inset-0 opacity-[0.04]" style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
-          backgroundSize: '40px 40px'
-        }} />
-        <div className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-20 blur-3xl" style={{ background: 'radial-gradient(circle, #6366f1, transparent)' }} />
-
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: '#6366f1' }}>
-            <span className="text-white font-bold text-[10px]">WAC</span>
+    <div className="min-h-screen flex justify-center" style={{ background: 'var(--paper)' }}>
+      {/* Form */}
+      <div
+        className="flex-1 max-w-[640px] flex flex-col p-8 lg:p-14"
+        style={{ background: 'var(--paper)' }}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 mb-6">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: 'var(--ink-strong)' }}
+          >
+            <span className="text-white text-[10px] font-bold tracking-tight">WAC</span>
           </div>
-          <span className="text-white font-semibold text-[15px] tracking-tight">WAC Deck Studio</span>
+          <span
+            className="font-serif text-[18px] tracking-tighter"
+            style={{ color: 'var(--ink-strong)' }}
+          >
+            Deck Studio
+          </span>
         </div>
 
-        <div className="relative z-10">
-          <h1 className="text-4xl font-bold leading-tight mb-4" style={{ color: '#f1f5f9' }}>
-            Start creating<br />in minutes.
-          </h1>
-          <p className="text-[15px] leading-relaxed" style={{ color: '#64748b' }}>
-            Join thousands of professionals who use WAC Deck Studio to create impactful presentations effortlessly.
-          </p>
-        </div>
+        <div className="flex-1 flex items-center">
+          <div className="w-full max-w-[420px]">
+            <p className="eyebrow mb-4">— Sign up</p>
+            <h1
+              className="font-serif leading-[1.05] tracking-tightest text-[30px] md:text-[38px]"
+              style={{ color: 'var(--ink-strong)' }}
+            >
+              Create your account
+            </h1>
+            <p
+              className="text-[14.5px] mt-4 mb-8 leading-relaxed"
+              style={{ color: 'var(--ink-soft)' }}
+            >
+              No credit card required.
+            </p>
 
-        <div className="relative z-10 flex gap-8">
-          {[['Free', 'To start'], ['2 min', 'Setup'], ['AI', 'Powered']].map(([val, label]) => (
-            <div key={label}>
-              <p className="text-xl font-bold text-white">{val}</p>
-              <p className="text-xs mt-0.5" style={{ color: '#475569' }}>{label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+            {error && (
+              <div
+                className="mb-6 px-4 py-3 rounded-xl text-[13px]"
+                style={{
+                  background: 'var(--accent-soft)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--accent)',
+                }}
+              >
+                {error}
+              </div>
+            )}
 
-      {/* Right — form */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-[380px]">
-          <div className="lg:hidden flex items-center gap-2 mb-10">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#6366f1' }}>
-              <span className="text-white font-bold text-[9px]">WAC</span>
-            </div>
-            <span className="font-semibold text-gray-900 text-sm">WAC Deck Studio</span>
-          </div>
-
-          <h2 className="text-[26px] font-bold text-gray-900 mb-1 tracking-tight">Create account</h2>
-          <p className="text-sm text-gray-400 mb-8">Get started — it's free</p>
-
-          {error && (
-            <div className="mb-5 px-4 py-3 rounded-xl border text-sm" style={{ background: '#fff1f2', borderColor: '#fecdd3', color: '#e11d48' }}>
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {[
-              { key: 'full_name', label: 'Full name', type: 'text', placeholder: 'Your name' },
-              { key: 'email', label: 'Email address', type: 'email', placeholder: 'you@company.com' },
-              { key: 'password', label: 'Password', type: 'password', placeholder: 'Min. 8 characters' },
-            ].map(({ key, label, type, placeholder }) => (
-              <div key={key}>
-                <label className="block text-[13px] font-medium text-gray-700 mb-1.5">{label}</label>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block eyebrow mb-2" style={{ color: 'var(--ink-strong)' }}>
+                  Full name
+                </label>
                 <input
-                  type={type}
-                  required
-                  minLength={key === 'password' ? 8 : undefined}
-                  value={form[key as keyof typeof form]}
-                  onChange={set(key)}
-                  placeholder={placeholder}
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-gray-900 bg-white transition-all outline-none"
-                  style={{ border: '1.5px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
-                  onFocus={e => (e.target as HTMLElement).style.borderColor = '#6366f1'}
-                  onBlur={e => (e.target as HTMLElement).style.borderColor = '#e2e8f0'}
+                  type="text"
+                  value={form.full_name}
+                  onChange={set('full_name')}
+                  placeholder="Your name"
+                  className="w-full h-12 px-4 rounded-xl text-[14px] focus:outline-none transition-colors"
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink-strong)',
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
                 />
               </div>
-            ))}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all mt-2 disabled:opacity-60"
-              style={{ background: '#0f172a', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1e293b'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#0f172a'}
-            >
-              {loading ? 'Creating account…' : 'Create account →'}
-            </button>
-          </form>
 
-          <p className="text-[13px] text-center text-gray-400 mt-7">
-            Already have an account?{' '}
-            <Link to="/login" className="font-semibold" style={{ color: '#6366f1' }}>Sign in</Link>
-          </p>
+              <div>
+                <label className="block eyebrow mb-2" style={{ color: 'var(--ink-strong)' }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={set('email')}
+                  placeholder="you@company.com"
+                  className="w-full h-12 px-4 rounded-xl text-[14px] focus:outline-none transition-colors"
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink-strong)',
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+                />
+              </div>
+
+              <div>
+                <label className="block eyebrow mb-2" style={{ color: 'var(--ink-strong)' }}>
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={show ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={set('password')}
+                    placeholder="At least 6 characters"
+                    className="w-full h-12 pl-4 pr-12 rounded-xl text-[14px] focus:outline-none transition-colors"
+                    style={{
+                      background: 'var(--surface)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--ink-strong)',
+                    }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShow(!show)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!ready || loading}
+                className="w-full h-12 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2 transition-all"
+                style={{
+                  background: ready && !loading ? 'var(--ink-strong)' : 'rgba(10,9,7,0.15)',
+                  color: '#fff',
+                  cursor: ready && !loading ? 'pointer' : 'not-allowed',
+                  marginTop: 24,
+                }}
+                onMouseEnter={(e) => {
+                  if (ready && !loading) e.currentTarget.style.background = '#2A2620'
+                }}
+                onMouseLeave={(e) => {
+                  if (ready && !loading) e.currentTarget.style.background = 'var(--ink-strong)'
+                }}
+              >
+                {loading ? 'Creating account…' : 'Create account'}
+                {!loading && <ArrowRight size={14} />}
+              </button>
+            </form>
+
+            <p
+              className="text-center text-[13px] mt-7"
+              style={{ color: 'var(--ink-soft)' }}
+            >
+              Already have one?{' '}
+              <Link
+                to="/login"
+                className="font-semibold underline-offset-4 hover:underline"
+                style={{ color: 'var(--ink-strong)' }}
+              >
+                Sign in
+              </Link>
+            </p>
+
+            <p
+              className="text-center text-[11.5px] mt-6"
+              style={{ color: 'var(--ink-faint)' }}
+            >
+              By signing up, you agree to our Terms and Privacy Policy.
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -61,6 +61,8 @@ export interface TemplateListItem {
   total_slides: number
   preview_presentation_id: string | null
   tags: string[]
+  preview_slide?: Slide | null
+  theme?: Theme | null
 }
 
 export interface TemplateDetail extends TemplateListItem {
@@ -125,6 +127,7 @@ export interface PresentationListItem {
   total_slides: number
   created_at: string
   updated_at: string
+  preview_slide?: Slide | null
 }
 
 export interface PresentationDetail {
