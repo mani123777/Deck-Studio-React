@@ -75,11 +75,12 @@ export const generationApi = {
     return api.post('/generate', form)
   },
   status: (job_id: string) => api.get(`/generate/status/${job_id}`),
-  generateSync: (prompt: string, slideCount: number, file?: File) => {
+  generateSync: (prompt: string, slideCount: number, file?: File, url?: string) => {
     const form = new FormData()
     form.append('prompt', prompt)
     form.append('slide_count', String(slideCount))
     if (file) form.append('file', file)
+    if (url) form.append('url', url)
     return api.post('/generate/sync', form)
   },
 }

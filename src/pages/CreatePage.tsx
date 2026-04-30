@@ -27,11 +27,11 @@ export function CreatePage() {
   const [saving, setSaving]                 = useState(false)
   const [error, setError]                   = useState<string | null>(null)
 
-  const handleGenerate = async (prompt: string, slideCount: number, file?: File) => {
+  const handleGenerate = async (prompt: string, slideCount: number, file?: File, url?: string) => {
     setPhase('generating')
     setError(null)
     try {
-      const res = await generationApi.generateSync(prompt, slideCount, file)
+      const res = await generationApi.generateSync(prompt, slideCount, file, url)
       setSlides(res.data.slides)
       setTheme(res.data.theme)
       setSelectedSlideIndex(0)

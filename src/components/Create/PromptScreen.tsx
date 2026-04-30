@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Paperclip, Sparkles, X, Loader2, ArrowLeft, Mic, Square } from 'lucide-react'
+import { Paperclip, Sparkles, X, Loader2, ArrowLeft, Mic, Square, Link2 } from 'lucide-react'
 
 interface Props {
-  onGenerate: (prompt: string, slideCount: number, file?: File) => void
+  onGenerate: (prompt: string, slideCount: number, file?: File, url?: string) => void
   isGenerating: boolean
 }
 
@@ -22,6 +22,37 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
   const [slideCount, setSlideCount] = useState(5)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const [urlOpen, setUrlOpen] = useState(false)
+  const [urlValue, setUrlValue] = useState('')
+  const [urlAttached, setUrlAttached] = useState<string | null>(null)
+  const [urlError, setUrlError] = useState('')
+
+  const isValidHttpUrl = (s: string) => {
+    try {
+      const u = new URL(s)
+      return u.protocol === 'http:' || u.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }
+
+  const attachUrl = () => {
+    const trimmed = urlValue.trim()
+    if (!isValidHttpUrl(trimmed)) {
+      setUrlError('Enter a valid http(s) URL.')
+      return
+    }
+    setUrlError('')
+    setUrlAttached(trimmed)
+    setUrlOpen(false)
+  }
+
+  const clearUrl = () => {
+    setUrlAttached(null)
+    setUrlValue('')
+    setUrlError('')
+  }
 
   // ── Voice transcription (Web Speech API) ────────────────────────
   const SR: any =
@@ -84,15 +115,21 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
 
   const toggleListening = () => (listening ? stopListening() : startListening())
 
-  const canSubmit = (prompt.trim().length > 0 || file !== null) && !isGenerating
+  const canSubmit =
+    (prompt.trim().length > 0 || file !== null || !!urlAttached) && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
     if (listening) stopListening()
+    const fallbackPrompt =
+      prompt.trim() ||
+      (file ? `Create a presentation about ${file.name}` : '') ||
+      (urlAttached ? `Create a presentation summarizing ${urlAttached}` : '')
     onGenerate(
-      prompt.trim() || `Create a presentation about ${file?.name}`,
+      fallbackPrompt,
       slideCount,
       file ?? undefined,
+      urlAttached ?? undefined,
     )
   }
 
@@ -164,22 +201,98 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
               style={{ color: 'var(--ink-strong)', background: 'transparent' }}
             />
 
-            {/* File chip */}
-            {file && (
-              <div className="mx-7 mb-4 inline-flex items-center gap-2 h-8 px-3 rounded-full"
-                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
-              >
-                <Paperclip size={11} style={{ color: 'var(--ink-soft)' }} />
-                <span className="text-[12px] truncate max-w-[200px]" style={{ color: 'var(--ink-strong)' }}>
-                  {file.name}
-                </span>
-                <button
-                  onClick={() => setFile(null)}
-                  className="ml-1 transition-colors"
-                  style={{ color: 'var(--ink-muted)' }}
+            {/* Attached chips */}
+            {(file || urlAttached) && (
+              <div className="mx-7 mb-4 flex flex-wrap items-center gap-2">
+                {file && (
+                  <div
+                    className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                  >
+                    <Paperclip size={11} style={{ color: 'var(--ink-soft)' }} />
+                    <span className="text-[12px] truncate max-w-[200px]" style={{ color: 'var(--ink-strong)' }}>
+                      {file.name}
+                    </span>
+                    <button
+                      onClick={() => setFile(null)}
+                      className="ml-1 transition-colors"
+                      style={{ color: 'var(--ink-muted)' }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+                {urlAttached && (
+                  <div
+                    className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                  >
+                    <Link2 size={11} style={{ color: 'var(--ink-soft)' }} />
+                    <span className="text-[12px] truncate max-w-[260px]" style={{ color: 'var(--ink-strong)' }}>
+                      {urlAttached}
+                    </span>
+                    <button
+                      onClick={clearUrl}
+                      className="ml-1 transition-colors"
+                      style={{ color: 'var(--ink-muted)' }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* URL input panel (collapsible) */}
+            {urlOpen && (
+              <div className="mx-7 mb-4">
+                <div
+                  className="flex items-center gap-2 h-10 px-3 rounded-xl"
+                  style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
                 >
-                  <X size={11} />
-                </button>
+                  <Link2 size={13} style={{ color: 'var(--ink-muted)' }} />
+                  <input
+                    autoFocus
+                    type="url"
+                    value={urlValue}
+                    onChange={(e) => { setUrlValue(e.target.value); if (urlError) setUrlError('') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); attachUrl() }
+                      if (e.key === 'Escape') { setUrlOpen(false); setUrlError('') }
+                    }}
+                    placeholder="https://example.com/article"
+                    disabled={isGenerating}
+                    className="flex-1 bg-transparent outline-none text-[13px]"
+                    style={{ color: 'var(--ink-strong)' }}
+                  />
+                  <button
+                    onClick={attachUrl}
+                    disabled={!urlValue.trim() || isGenerating}
+                    className="text-[12px] font-semibold px-3 h-7 rounded-md transition-colors"
+                    style={{
+                      background: urlValue.trim() ? 'var(--ink-strong)' : 'rgba(10,9,7,0.15)',
+                      color: '#fff',
+                      cursor: urlValue.trim() ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Attach
+                  </button>
+                  <button
+                    onClick={() => { setUrlOpen(false); setUrlError('') }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                {urlError && (
+                  <p className="mt-1.5 text-[11.5px]" style={{ color: 'var(--accent, #B43C28)' }}>
+                    {urlError}
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+                  We'll fetch the page and use its readable text content as source material.
+                </p>
               </div>
             )}
 
@@ -213,6 +326,33 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
+
+                <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+                <button
+                  onClick={() => { setUrlOpen((o) => !o); setUrlError('') }}
+                  disabled={isGenerating}
+                  aria-pressed={urlOpen}
+                  className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                  style={{
+                    color: urlOpen || urlAttached ? 'var(--ink-strong)' : 'var(--ink-soft)',
+                    background: urlOpen ? 'rgba(10,9,7,0.06)' : 'transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!urlOpen) {
+                      e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                      e.currentTarget.style.color = 'var(--ink-strong)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!urlOpen) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = urlAttached ? 'var(--ink-strong)' : 'var(--ink-soft)'
+                    }
+                  }}
+                >
+                  <Link2 size={13} />
+                  From URL
+                </button>
 
                 {speechSupported && (
                   <>
