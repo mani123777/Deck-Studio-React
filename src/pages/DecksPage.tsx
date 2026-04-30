@@ -5,7 +5,7 @@ import { AppLayout } from '../components/Layout/AppLayout'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { Button } from '../components/ui/Button'
 import type { PresentationListItem } from '../types'
-import { Upload, MoreHorizontal, Sparkles } from 'lucide-react'
+import { Upload, MoreHorizontal, Sparkles, Pencil } from 'lucide-react'
 import { ImportModal } from '../components/Dashboard/ImportModal'
 
 const SLIDE_W = 1280
@@ -218,9 +218,12 @@ function DeckCard({
       </div>
 
       <div className="pt-4 px-1 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <button
+          onClick={onOpen}
+          className="min-w-0 flex-1 text-left cursor-pointer"
+        >
           <p
-            className="font-serif text-[17px] leading-tight tracking-tighter truncate"
+            className="font-serif text-[17px] leading-tight tracking-tighter truncate hover:underline underline-offset-4 decoration-[1px]"
             style={{ color: 'var(--ink-strong)' }}
           >
             {p.title}
@@ -234,7 +237,7 @@ function DeckCard({
               </>
             )}
           </div>
-        </div>
+        </button>
 
         <div className="relative flex-shrink-0">
           <button
@@ -266,6 +269,16 @@ function DeckCard({
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 Open
+              </button>
+              <button
+                onClick={() => { onOpen(); onCloseMenu() }}
+                className="w-full text-left px-3.5 py-2 text-[13px] transition-colors flex items-center gap-2"
+                style={{ color: 'var(--ink)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Pencil size={12} />
+                Edit slides
               </button>
               <button
                 onClick={onDelete}
