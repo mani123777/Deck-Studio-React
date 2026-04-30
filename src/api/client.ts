@@ -133,3 +133,99 @@ export const shareApi = {
   url: (presentation_id: string) =>
     `${BASE_URL}/api/v1/share/view/${presentation_id}`,
 }
+
+// Projects
+export type ProjectRole = 'developer' | 'ba' | 'sales' | 'pm' | 'qa'
+export type ProjectStatus = 'active' | 'draft' | 'archived'
+export type ExtractionStatus = 'pending' | 'complete' | 'failed'
+
+export interface ProjectListItem {
+  id: string
+  name: string
+  description: string
+  status: ProjectStatus
+  tags: string[]
+  owner_id: string
+  document_count: number
+  presentation_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectDocument {
+  id: string
+  project_id: string
+  filename: string
+  original_filename: string
+  format: string
+  size_bytes: number
+  version: number
+  extraction_status: ExtractionStatus
+  tags: string[]
+  uploaded_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectPresentationLink {
+  id: string
+  project_id: string
+  presentation_id: string
+  role: ProjectRole
+  prompt_version: string
+  source_document_ids: string[]
+  generated_by: string
+  title: string
+  slide_count: number
+  created_at: string
+}
+
+export interface ProjectDetail extends ProjectListItem {
+  documents: ProjectDocument[]
+  presentations: ProjectPresentationLink[]
+}
+
+export interface ProjectRoleProfile {
+  role: ProjectRole
+  audience: string
+  focus: string
+}
+
+export const projectsApi = {
+  list: (params?: { status?: string; search?: string; sort?: string }) =>
+    api.get<ProjectListItem[]>('/projects', { params }),
+  get: (id: string) => api.get<ProjectDetail>(`/projects/${id}`),
+  create: (payload: { name: string; description?: string; tags?: string[]; status?: ProjectStatus }) =>
+    api.post<ProjectListItem>('/projects', payload),
+  update: (id: string, payload: Partial<Pick<ProjectListItem, 'name' | 'description' | 'tags' | 'status'>>) =>
+    api.patch<ProjectListItem>(`/projects/${id}`, payload),
+  delete: (id: string) => api.delete(`/projects/${id}`),
+
+  roles: () => api.get<ProjectRoleProfile[]>('/projects/roles'),
+
+  listDocuments: (project_id: string) =>
+    api.get<ProjectDocument[]>(`/projects/${project_id}/documents`),
+  uploadDocument: (project_id: string, file: File, tags?: string[]) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (tags?.length) form.append('tags', JSON.stringify(tags))
+    return api.post<ProjectDocument>(`/projects/${project_id}/documents`, form)
+  },
+  deleteDocument: (project_id: string, document_id: string) =>
+    api.delete(`/projects/${project_id}/documents/${document_id}`),
+  retryExtraction: (project_id: string, document_id: string) =>
+    api.post<ProjectDocument>(
+      `/projects/${project_id}/documents/${document_id}/retry-extraction`,
+    ),
+
+  generate: (
+    project_id: string,
+    payload: {
+      role: ProjectRole
+      document_ids?: string[]
+      template_id?: string
+      theme_id?: string
+      title?: string
+    },
+  ) => api.post<ProjectPresentationLink>(`/projects/${project_id}/generate`, payload),
+}
