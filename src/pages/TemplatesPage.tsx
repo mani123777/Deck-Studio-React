@@ -87,14 +87,36 @@ function TemplateThumbnail({
     return () => ro.disconnect()
   }, [])
 
+  // Prefer thumbnail image when available; fall back to live slide preview
+  if (hasImage) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        <PlaceholderThumbnail name={name} />
+        <img
+          src={resolved}
+          alt={name}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgError(true)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            opacity: imgLoaded ? 1 : 0,
+            transition: 'opacity 0.3s',
+          }}
+        />
+      </div>
+    )
+  }
+
   if (hasSlide) {
     return (
-      // Fills parent; ref reads this element's clientWidth for scale calc
       <div
         ref={ref}
         style={{ position: 'absolute', inset: 0, background: '#0A0907', overflow: 'hidden' }}
       >
-        {/* Slide centered: translate centers the 1280×720 canvas, scale fits it */}
         <div
           style={{
             position: 'absolute',
@@ -112,28 +134,10 @@ function TemplateThumbnail({
     )
   }
 
-  // Image or styled placeholder fallback
+  // Pure styled placeholder as last resort
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-      {/* Placeholder always renders beneath the image */}
       <PlaceholderThumbnail name={name} />
-      {hasImage && (
-        <img
-          src={resolved}
-          alt={name}
-          onLoad={() => setImgLoaded(true)}
-          onError={() => setImgError(true)}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            opacity: imgLoaded ? 1 : 0,
-            transition: 'opacity 0.3s',
-          }}
-        />
-      )}
     </div>
   )
 }
@@ -505,10 +509,7 @@ export function TemplatesPage() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-            style={{ gap: '48px 32px', alignItems: 'start' }}
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12 items-start">
             {filtered.map((t) => (
               <TemplateCard
                 key={t.id}
