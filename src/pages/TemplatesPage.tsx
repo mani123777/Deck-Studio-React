@@ -6,7 +6,7 @@ import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { Button } from '../components/ui/Button'
 import { Chip } from '../components/ui/Chip'
 import type { PreviewResponse, Slide, TemplateListItem, Theme } from '../types'
-import { Loader2, Sparkles, X, Copy, Search, FileText, ArrowUpRight } from 'lucide-react'
+import { Loader2, Sparkles, X, Copy, Search, FileText, ArrowUpRight, Plus } from 'lucide-react'
 
 const SLIDE_W = 1280
 const SLIDE_H = 720
@@ -49,7 +49,7 @@ function TemplateThumbnail({
 
   if (hasSlide) {
     return (
-      <div ref={ref} className="aspect-[16/9] relative overflow-hidden" style={{ background: '#0A0907' }}>
+      <div ref={ref} className="aspect-[16/9] relative overflow-hidden" style={{ background: 'var(--paper-2)' }}>
         <div
           style={{
             position: 'absolute',
@@ -254,7 +254,12 @@ function TemplatePreviewModal({
             </Button>
             <Button
               variant="primary"
-              onClick={() => navigate(`/templates/${template.id}/create`)}
+              onClick={() => {
+                const path = (template as any).slide_source === 'simple'
+                  ? `/templates/${template.id}/use`
+                  : `/templates/${template.id}/create`
+                navigate(path)
+              }}
               disabled={busy !== null || loading}
               leadingIcon={<Sparkles size={13} />}
               trailingIcon={<ArrowUpRight size={13} />}
@@ -306,7 +311,8 @@ function SlidePreviewCard({
           borderRadius: 12,
           overflow: 'hidden',
           boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 12px 28px -8px rgba(15,14,12,0.16)',
-          background: '#000',
+          background: 'var(--paper-2)',
+          border: '1px solid var(--line)',
           position: 'relative',
         }}
       >
@@ -328,6 +334,8 @@ function SlidePreviewCard({
   )
 }
 
+type SourceFilter = 'all' | 'mine' | 'builtin'
+
 // ── Templates page ──────────────────────────────────────────────────────────
 export function TemplatesPage() {
   const navigate = useNavigate()
@@ -336,12 +344,24 @@ export function TemplatesPage() {
   const [previewing, setPreviewing] = useState<TemplateListItem | null>(null)
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   useEffect(() => {
-    templatesApi.list()
+    setLoading(true)
+    templatesApi
+      .list({ source: sourceFilter })
       .then((r) => setTemplates(r.data))
       .finally(() => setLoading(false))
-  }, [])
+  }, [sourceFilter])
+
+  const openTemplate = (t: TemplateListItem) => {
+    // Wizard-built templates use the simpler prompt-only flow.
+    if ((t as any).slide_source === 'simple') {
+      navigate(`/templates/${t.id}/use`)
+    } else {
+      navigate(`/templates/${t.id}/create`)
+    }
+  }
 
   const categories = useMemo(() => {
     const set = new Set<string>()
@@ -385,7 +405,7 @@ export function TemplatesPage() {
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-6 mb-8 flex-wrap">
+        <div className="flex items-center justify-between gap-6 mb-6 flex-wrap">
           <div className="relative max-w-sm flex-1 min-w-[280px]">
             <Search
               size={14}
@@ -407,7 +427,33 @@ export function TemplatesPage() {
               onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
             />
           </div>
-          <p className="eyebrow">{filtered.length} of {templates.length}</p>
+          <div className="flex items-center gap-3">
+            <p className="eyebrow">{filtered.length} of {templates.length}</p>
+            <Button
+              variant="primary"
+              onClick={() => navigate('/templates/new')}
+              leadingIcon={<Plus size={13} />}
+            >
+              Create template
+            </Button>
+          </div>
+        </div>
+
+        {/* Source filter pills */}
+        <div className="flex items-center gap-1 mb-4 flex-wrap">
+          {([
+            { value: 'all', label: 'All' },
+            { value: 'mine', label: 'Mine' },
+            { value: 'builtin', label: 'Built-in' },
+          ] as const).map((opt) => (
+            <Chip
+              key={opt.value}
+              active={sourceFilter === opt.value}
+              onClick={() => setSourceFilter(opt.value)}
+            >
+              {opt.label}
+            </Chip>
+          ))}
         </div>
 
         {/* Category chips */}
@@ -457,7 +503,7 @@ export function TemplatesPage() {
                 key={t.id}
                 template={t}
                 onView={() => setPreviewing(t)}
-                onCreate={() => navigate(`/templates/${t.id}/create`)}
+                onCreate={() => openTemplate(t)}
               />
             ))}
           </div>

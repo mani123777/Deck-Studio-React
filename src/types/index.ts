@@ -63,6 +63,11 @@ export interface TemplateListItem {
   tags: string[]
   preview_slide?: Slide | null
   theme?: Theme | null
+  slide_source?: 'rich' | 'simple'
+  is_system?: boolean
+  is_published?: boolean
+  created_by?: string | null
+  role?: string | null
 }
 
 export interface TemplateDetail extends TemplateListItem {
@@ -97,7 +102,17 @@ export interface Styling {
   color?: string
   background_color?: string
   text_align?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
 }
+
+export interface ChartDataPoint {
+  label: string
+  value: number
+}
+
+export type ChartType = 'bar' | 'pie' | 'line'
 
 export interface Block {
   id: string
@@ -105,6 +120,8 @@ export interface Block {
   content: string
   position: Position
   styling: Styling
+  chart_type?: ChartType
+  chart_data?: ChartDataPoint[]
 }
 
 export interface SlideBackground {

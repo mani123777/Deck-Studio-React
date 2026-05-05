@@ -19,38 +19,55 @@ function timeAgo(dateStr: string) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+const PAGE_SIZE = 20
+
 export function ProjectsPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const [projects, setProjects] = useState<ProjectListItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
 
-  const refresh = async () => {
-    setLoading(true)
+  // Debounce search → trigger refetch
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const fetchPage = async (resetOffset: boolean) => {
+    const nextOffset = resetOffset ? 0 : offset
+    if (resetOffset) setLoading(true)
+    else setLoadingMore(true)
     try {
-      const { data } = await projectsApi.list()
-      setProjects(data)
+      const { data } = await projectsApi.listPaged({
+        search: debouncedSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      })
+      setTotal(data.total)
+      setOffset(nextOffset + data.items.length)
+      setProjects((prev) => (resetOffset ? data.items : [...prev, ...data.items]))
     } catch (e: any) {
       toast.error('Failed to load projects', e?.response?.data?.detail ?? e?.message ?? '')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }
 
+  // Initial load + reload when search changes
   useEffect(() => {
-    refresh()
+    fetchPage(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [debouncedSearch])
 
-  const filtered = search.trim()
-    ? projects.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.description.toLowerCase().includes(search.toLowerCase()),
-      )
-    : projects
+  const filtered = projects
+  const hasMore = projects.length < total
 
   return (
     <AppLayout>
@@ -142,11 +159,27 @@ export function ProjectsPage() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filtered.map((p) => (
-              <ProjectCard key={p.id} p={p} onOpen={() => navigate(`/projects/${p.id}`)} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filtered.map((p) => (
+                <ProjectCard key={p.id} p={p} onOpen={() => navigate(`/projects/${p.id}`)} />
+              ))}
+            </div>
+            <div className="mt-8 flex items-center justify-center gap-4">
+              <span className="eyebrow" style={{ color: 'var(--ink-muted)' }}>
+                Showing {filtered.length} of {total}
+              </span>
+              {hasMore && (
+                <Button
+                  variant="secondary"
+                  onClick={() => fetchPage(false)}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </Button>
+              )}
+            </div>
+          </>
         )}
       </div>
     </AppLayout>

@@ -57,13 +57,43 @@ export const themesApi = {
 }
 
 // Templates
+export type TemplateLayoutType = 'title' | 'bullets' | 'image' | 'columns'
+export type TemplateSlideSource = 'rich' | 'simple'
+
+export interface TemplateSlideInput {
+  order: number
+  title: string
+  layout_type: TemplateLayoutType
+  prompt_hint: string
+}
+
+export interface TemplateCreatePayload {
+  name: string
+  description?: string
+  category?: string
+  tags?: string[]
+  role?: string | null
+  theme_id: string
+  slides: TemplateSlideInput[]
+}
+
 export const templatesApi = {
-  list: () => api.get('/templates'),
+  list: (params?: { source?: 'mine' | 'builtin' | 'all'; category?: string }) =>
+    api.get('/templates', { params }),
   get: (id: string) => api.get(`/templates/${id}`),
   preview: (id: string) => api.get(`/templates/${id}/preview`),
   getPreview: (id: string) => api.get(`/templates/${id}/preview`),
   generateFromPrompt: (id: string, prompt: string, title?: string, slide_count?: number) =>
     api.post(`/templates/${id}/generate-from-prompt`, { prompt, title, slide_count }),
+
+  create: (payload: TemplateCreatePayload) => api.post('/templates', payload),
+  update: (id: string, payload: Partial<TemplateCreatePayload>) =>
+    api.put(`/templates/${id}`, payload),
+  delete: (id: string) => api.delete(`/templates/${id}`),
+  publish: (id: string, is_published: boolean) =>
+    api.post(`/templates/${id}/publish`, { is_published }),
+  generateSimple: (id: string, prompt: string, title?: string) =>
+    api.post(`/templates/${id}/generate-simple`, { prompt, title }),
 }
 
 // Generation
@@ -179,11 +209,52 @@ export interface ProjectPresentationLink {
   title: string
   slide_count: number
   created_at: string
+  prior_link_id: string | null
+  version: number
 }
 
 export interface ProjectDetail extends ProjectListItem {
   documents: ProjectDocument[]
   presentations: ProjectPresentationLink[]
+}
+
+export interface ProjectListPage {
+  items: ProjectListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface ProjectActivity {
+  id: string
+  project_id: string
+  actor_id: string | null
+  actor_name: string
+  action: string
+  entity_type: string | null
+  entity_id: string | null
+  summary: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface ProjectActivityPage {
+  items: ProjectActivity[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type ProjectMemberRole = 'owner' | 'editor' | 'viewer'
+
+export interface ProjectMember {
+  id: string
+  project_id: string
+  user_id: string
+  email: string
+  full_name: string
+  role: ProjectMemberRole
+  created_at: string
 }
 
 export interface ProjectRoleProfile {
@@ -195,6 +266,16 @@ export interface ProjectRoleProfile {
 export const projectsApi = {
   list: (params?: { status?: string; search?: string; sort?: string }) =>
     api.get<ProjectListItem[]>('/projects', { params }),
+  listPaged: (params?: {
+    status?: string
+    search?: string
+    sort?: string
+    limit?: number
+    offset?: number
+  }) =>
+    api.get<ProjectListPage>('/projects', {
+      params: { ...params, paginated: true },
+    }),
   get: (id: string) => api.get<ProjectDetail>(`/projects/${id}`),
   create: (payload: { name: string; description?: string; tags?: string[]; status?: ProjectStatus }) =>
     api.post<ProjectListItem>('/projects', payload),
@@ -218,6 +299,28 @@ export const projectsApi = {
     api.post<ProjectDocument>(
       `/projects/${project_id}/documents/${document_id}/retry-extraction`,
     ),
+  documentStatus: (project_id: string, document_id: string) =>
+    api.get<{ id: string; extraction_status: ExtractionStatus; extraction_error: string | null }>(
+      `/projects/${project_id}/documents/${document_id}/status`,
+    ),
+  getDocument: (project_id: string, document_id: string) =>
+    api.get<ProjectDocument & { extracted_text: string | null; extraction_error: string | null; storage_path: string }>(
+      `/projects/${project_id}/documents/${document_id}`,
+    ),
+  downloadDocument: async (project_id: string, document_id: string, filename: string) => {
+    const response = await api.get(
+      `/projects/${project_id}/documents/${document_id}/download`,
+      { responseType: 'blob' },
+    )
+    const url = URL.createObjectURL(response.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
 
   generate: (
     project_id: string,
@@ -229,4 +332,34 @@ export const projectsApi = {
       title?: string
     },
   ) => api.post<ProjectPresentationLink>(`/projects/${project_id}/generate`, payload),
+
+  listActivities: (project_id: string, params?: { limit?: number; offset?: number }) =>
+    api.get<ProjectActivityPage>(`/projects/${project_id}/activities`, { params }),
+
+  listMembers: (project_id: string) =>
+    api.get<ProjectMember[]>(`/projects/${project_id}/members`),
+  addMember: (project_id: string, email: string, role: ProjectMemberRole) =>
+    api.post<ProjectMember>(`/projects/${project_id}/members`, { email, role }),
+  updateMemberRole: (project_id: string, member_id: string, role: ProjectMemberRole) =>
+    api.patch<ProjectMember>(`/projects/${project_id}/members/${member_id}`, { role }),
+  removeMember: (project_id: string, member_id: string) =>
+    api.delete(`/projects/${project_id}/members/${member_id}`),
+
+  deletePresentation: (project_id: string, link_id: string) =>
+    api.delete(`/projects/${project_id}/presentations/${link_id}`),
+  regeneratePresentation: (
+    project_id: string,
+    link_id: string,
+    payload?: {
+      role?: ProjectRole
+      document_ids?: string[]
+      template_id?: string
+      theme_id?: string
+      title?: string
+    },
+  ) =>
+    api.post<ProjectPresentationLink>(
+      `/projects/${project_id}/presentations/${link_id}/regenerate`,
+      payload ?? {},
+    ),
 }
