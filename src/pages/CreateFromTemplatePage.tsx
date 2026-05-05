@@ -1,9 +1,29 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react'
+import { ArrowLeft, Sparkles, Loader2, Paperclip, Link2, Mic, Square, X } from 'lucide-react'
 import { templatesApi } from '../api/client'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import type { PreviewResponse, Slide, TemplateListItem, Theme } from '../types'
+
+const TXT_RE = /\.txt$/i
+
+function isValidHttpUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
 
 const SLIDE_W = 1280
 const SLIDE_H = 720
@@ -32,6 +52,83 @@ export function CreateFromTemplatePage() {
   const [markdown, setMarkdown] = useState(true)
   const [cardCount, setCardCount] = useState<number>(5)
 
+  // ── Attached file ──────────────────────────────────────────────
+  const [file, setFile] = useState<File | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── URL input ───────────────────────────────────────────────────
+  const [urlOpen, setUrlOpen]         = useState(false)
+  const [urlValue, setUrlValue]       = useState('')
+  const [urlAttached, setUrlAttached] = useState<string | null>(null)
+  const [urlError, setUrlError]       = useState('')
+
+  const attachUrl = () => {
+    const trimmed = urlValue.trim()
+    if (!isValidHttpUrl(trimmed)) {
+      setUrlError('Enter a valid http(s) URL.')
+      return
+    }
+    setUrlError('')
+    setUrlAttached(trimmed)
+    setUrlOpen(false)
+  }
+  const clearUrl = () => { setUrlAttached(null); setUrlValue(''); setUrlError('') }
+
+  // ── Voice (Web Speech API) ──────────────────────────────────────
+  const SR: any =
+    typeof window !== 'undefined'
+      ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      : null
+  const speechSupported = !!SR
+  const [listening, setListening]   = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const recognitionRef = useRef<any>(null)
+  const baseTextRef    = useRef('')
+
+  useEffect(() => () => recognitionRef.current?.stop(), [])
+
+  const startListening = () => {
+    if (!SR) return
+    try {
+      const rec = new SR()
+      rec.lang = navigator.language || 'en-US'
+      rec.continuous = true
+      rec.interimResults = true
+      baseTextRef.current = prompt ? prompt.trimEnd() + (prompt.trimEnd() ? ' ' : '') : ''
+
+      rec.onresult = (e: any) => {
+        let final = ''
+        let interim = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i]
+          if (r.isFinal) final += r[0].transcript
+          else interim += r[0].transcript
+        }
+        if (final) baseTextRef.current += final
+        setPrompt((baseTextRef.current + interim).slice(0, MAX_CHARS))
+      }
+      rec.onerror = (e: any) => {
+        setListening(false)
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          setVoiceError('Microphone permission denied.')
+        } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
+          setVoiceError('Could not transcribe — try again.')
+        }
+      }
+      rec.onend = () => setListening(false)
+
+      recognitionRef.current = rec
+      setVoiceError('')
+      setListening(true)
+      rec.start()
+    } catch {
+      setListening(false)
+      setVoiceError('Voice input is not available.')
+    }
+  }
+  const stopListening   = () => { recognitionRef.current?.stop(); setListening(false) }
+  const toggleListening = () => (listening ? stopListening() : startListening())
+
   useEffect(() => {
     if (!templateId) return
     setLoading(true)
@@ -51,14 +148,47 @@ export function CreateFromTemplatePage() {
   }, [templateId])
 
   const charCount = prompt.length
-  const canGenerate = !generating && prompt.trim().length > 0 && !!templateId
+  const canGenerate =
+    !generating &&
+    !!templateId &&
+    (prompt.trim().length > 0 || !!file || !!urlAttached)
+
+  // Compose final prompt — backend takes JSON {prompt}, so file content + URL
+  // are merged in here as additional context. .txt files are read inline;
+  // non-text files contribute filename only.
+  const buildFinalPrompt = async (): Promise<string> => {
+    const parts: string[] = []
+    if (prompt.trim()) parts.push(prompt.trim())
+
+    if (file) {
+      if (TXT_RE.test(file.name)) {
+        try {
+          const text = await readFileAsText(file)
+          if (text.trim()) {
+            parts.push(`\n\n--- Attached document: ${file.name} ---\n${text.trim()}`)
+          }
+        } catch {
+          parts.push(`\n\n[Attached: ${file.name} — could not read]`)
+        }
+      } else {
+        parts.push(
+          `\n\n[Attached file: ${file.name} — note: only .txt is read inline here. For full PDF/DOCX extraction, upload via Projects.]`
+        )
+      }
+    }
+
+    if (urlAttached) parts.push(`\n\n[Source URL: ${urlAttached}]`)
+    return parts.join('').slice(0, MAX_CHARS)
+  }
 
   const handleGenerate = async () => {
     if (!canGenerate || !templateId) return
+    if (listening) stopListening()
     setGenerating(true)
     setGenError('')
     try {
-      const { data } = await templatesApi.generateFromPrompt(templateId, prompt.trim(), undefined, cardCount)
+      const finalPrompt = await buildFinalPrompt()
+      const { data } = await templatesApi.generateFromPrompt(templateId, finalPrompt, undefined, cardCount)
       navigate(`/presentations/${(data as { id: string }).id}`)
     } catch (e: any) {
       setGenError(e?.response?.data?.detail ?? 'Generation failed. Please try again.')
@@ -85,7 +215,7 @@ export function CreateFromTemplatePage() {
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 px-3 h-9 rounded-full text-[13px] transition-colors"
             style={{ color: 'var(--ink)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(10,9,7,0.05)')}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(10,9,7,0.06)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
             <ArrowLeft size={14} />
@@ -167,27 +297,229 @@ export function CreateFromTemplatePage() {
               ))}
             </div>
 
+            {/* Attached chips */}
+            {(file || urlAttached) && (
+              <div className="px-5 pb-3 flex flex-wrap items-center gap-2">
+                {file && (
+                  <div
+                    className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                  >
+                    <Paperclip size={11} style={{ color: 'var(--ink-soft)' }} />
+                    <span className="text-[12px] truncate max-w-[220px]" style={{ color: 'var(--ink-strong)' }}>
+                      {file.name}
+                    </span>
+                    <button onClick={() => setFile(null)} className="ml-1" style={{ color: 'var(--ink-muted)' }}>
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+                {urlAttached && (
+                  <div
+                    className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                  >
+                    <Link2 size={11} style={{ color: 'var(--ink-soft)' }} />
+                    <span className="text-[12px] truncate max-w-[280px]" style={{ color: 'var(--ink-strong)' }}>
+                      {urlAttached}
+                    </span>
+                    <button onClick={clearUrl} className="ml-1" style={{ color: 'var(--ink-muted)' }}>
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* URL input panel (collapsible) */}
+            {urlOpen && (
+              <div className="px-5 pb-3">
+                <div
+                  className="flex items-center gap-2 h-10 px-3 rounded-xl"
+                  style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                >
+                  <Link2 size={13} style={{ color: 'var(--ink-muted)' }} />
+                  <input
+                    autoFocus
+                    type="url"
+                    value={urlValue}
+                    onChange={(e) => { setUrlValue(e.target.value); if (urlError) setUrlError('') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter')  { e.preventDefault(); attachUrl() }
+                      if (e.key === 'Escape') { setUrlOpen(false); setUrlError('') }
+                    }}
+                    placeholder="https://example.com/article"
+                    disabled={generating}
+                    className="flex-1 bg-transparent outline-none text-[13px]"
+                    style={{ color: 'var(--ink-strong)' }}
+                  />
+                  <button
+                    onClick={attachUrl}
+                    disabled={!urlValue.trim() || generating}
+                    className="text-[12px] font-semibold px-3 h-7 rounded-md"
+                    style={{
+                      background: urlValue.trim() ? 'var(--ink-strong)' : 'rgba(10,9,7,0.15)',
+                      color: '#fff',
+                      cursor: urlValue.trim() ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Attach
+                  </button>
+                  <button
+                    onClick={() => { setUrlOpen(false); setUrlError('') }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                {urlError && (
+                  <p className="mt-1.5 text-[11.5px]" style={{ color: 'var(--accent, #B43C28)' }}>
+                    {urlError}
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+                  The URL is added as a reference to your prompt.
+                </p>
+              </div>
+            )}
+
             {/* Footer row */}
             <div
-              className="px-5 py-3 flex items-center justify-between"
+              className="px-5 py-3 flex items-center justify-between gap-2 flex-wrap"
               style={{ borderTop: '1px solid var(--line)', background: 'var(--surface-2)' }}
             >
-              <button
-                onClick={() => setMarkdown((v) => !v)}
-                className="flex items-center gap-1.5 text-[11.5px] font-mono uppercase tracking-wider transition-colors"
-                style={{ color: markdown ? 'var(--ink)' : 'var(--ink-faint)' }}
-              >
-                <span
-                  className="text-[10px] font-bold border rounded px-1 py-0.5"
-                  style={{ borderColor: markdown ? 'var(--ink)' : 'var(--line-strong)' }}
-                >M</span>
-                Markdown
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={generating}
+                  className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                  style={{ color: 'var(--ink-soft)' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                    e.currentTarget.style.color = 'var(--ink-strong)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.color = 'var(--ink-soft)'
+                  }}
+                >
+                  <Paperclip size={13} />
+                  Attach
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".txt,.docx,.pdf"
+                  className="hidden"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+
+                <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+
+                <button
+                  onClick={() => { setUrlOpen((o) => !o); setUrlError('') }}
+                  disabled={generating}
+                  aria-pressed={urlOpen}
+                  className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                  style={{
+                    color: urlOpen || urlAttached ? 'var(--ink-strong)' : 'var(--ink-soft)',
+                    background: urlOpen ? 'rgba(10,9,7,0.06)' : 'transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!urlOpen) {
+                      e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                      e.currentTarget.style.color = 'var(--ink-strong)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!urlOpen) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = urlAttached ? 'var(--ink-strong)' : 'var(--ink-soft)'
+                    }
+                  }}
+                >
+                  <Link2 size={13} />
+                  From URL
+                </button>
+
+                {speechSupported && (
+                  <>
+                    <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+                    <button
+                      onClick={toggleListening}
+                      disabled={generating}
+                      title={listening ? 'Stop voice input' : 'Voice input (Web Speech API)'}
+                      aria-pressed={listening}
+                      className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                      style={{
+                        color: listening ? '#fff' : 'var(--ink-soft)',
+                        background: listening ? 'var(--accent, #B43C28)' : 'transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!listening) {
+                          e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                          e.currentTarget.style.color = 'var(--ink-strong)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!listening) {
+                          e.currentTarget.style.background = 'transparent'
+                          e.currentTarget.style.color = 'var(--ink-soft)'
+                        }
+                      }}
+                    >
+                      {listening ? (
+                        <>
+                          <Square size={11} fill="currentColor" />
+                          <span className="flex items-center gap-1">
+                            Listening
+                            <span
+                              style={{
+                                width: 6, height: 6, borderRadius: '50%',
+                                background: '#fff',
+                                animation: 'wac-mic-pulse 1.1s ease-in-out infinite',
+                              }}
+                            />
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic size={13} />
+                          Voice
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+
+                <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+
+                <button
+                  onClick={() => setMarkdown((v) => !v)}
+                  className="flex items-center gap-1.5 text-[11.5px] font-mono uppercase tracking-wider transition-colors"
+                  style={{ color: markdown ? 'var(--ink)' : 'var(--ink-faint)' }}
+                >
+                  <span
+                    className="text-[10px] font-bold border rounded px-1 py-0.5"
+                    style={{ borderColor: markdown ? 'var(--ink)' : 'var(--line-strong)' }}
+                  >M</span>
+                  Markdown
+                </button>
+              </div>
               <span className="text-[11px] font-mono tabular-nums" style={{ color: 'var(--ink-muted)' }}>
                 {charCount.toLocaleString()} / {MAX_CHARS.toLocaleString()}
               </span>
             </div>
           </div>
+
+          {voiceError && (
+            <p className="mt-3 text-[12px]" style={{ color: 'var(--accent, #B43C28)' }}>
+              {voiceError}
+            </p>
+          )}
+
+          <style>{`@keyframes wac-mic-pulse { 0%,100% { opacity: 0.35; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.15); } }`}</style>
 
           {/* Error */}
           {genError && (
@@ -359,7 +691,8 @@ function SlideThumb({
           borderRadius: 12,
           overflow: 'hidden',
           boxShadow: '0 1px 1px rgba(15,14,12,0.05), 0 12px 28px -8px rgba(15,14,12,0.16)',
-          background: '#000',
+          background: 'var(--paper-2)',
+          border: '1px solid var(--line)',
           position: 'relative',
         }}
       >

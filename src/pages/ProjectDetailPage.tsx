@@ -12,17 +12,30 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Download,
+  ChevronDown,
+  ChevronRight,
+  Activity as ActivityIcon,
+  FilePlus,
+  FileX,
+  FileCheck,
+  Edit3,
+  UserPlus,
 } from 'lucide-react'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { Button } from '../components/ui/Button'
 import { useToast } from '../components/ui/Toast'
 import { projectsApi } from '../api/client'
 import type {
+  ProjectActivity as ProjectActivityT,
   ProjectDetail,
   ProjectDocument,
+  ProjectMember as ProjectMemberT,
+  ProjectMemberRole,
   ProjectRole,
   ProjectRoleProfile,
 } from '../api/client'
+import { useAuthStore } from '../store/authStore'
 
 const ALLOWED_TYPES = ['.pdf', '.docx', '.txt']
 
@@ -43,6 +56,48 @@ export function ProjectDetailPage() {
   const [uploading, setUploading] = useState(false)
   const [showGenerate, setShowGenerate] = useState(false)
 
+  const [activities, setActivities] = useState<ProjectActivityT[]>([])
+  const [activitiesTotal, setActivitiesTotal] = useState(0)
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+  const [activitiesOffset, setActivitiesOffset] = useState(0)
+  const ACTIVITIES_PAGE = 20
+
+  const [members, setMembers] = useState<ProjectMemberT[]>([])
+  const currentUser = useAuthStore((s) => s.user)
+  const myMembership = members.find((m) => m.user_id === currentUser?.id)
+  const myRole: ProjectMemberRole | null = myMembership?.role ?? null
+  const isOwner = myRole === 'owner'
+  const canEdit = myRole === 'owner' || myRole === 'editor'
+
+  const fetchMembers = async () => {
+    if (!id) return
+    try {
+      const { data } = await projectsApi.listMembers(id)
+      setMembers(data)
+    } catch {
+      /* swallow — non-critical */
+    }
+  }
+
+  const fetchActivities = async (resetOffset: boolean) => {
+    if (!id) return
+    const nextOffset = resetOffset ? 0 : activitiesOffset
+    setActivitiesLoading(true)
+    try {
+      const { data } = await projectsApi.listActivities(id, {
+        limit: ACTIVITIES_PAGE,
+        offset: nextOffset,
+      })
+      setActivitiesTotal(data.total)
+      setActivitiesOffset(nextOffset + data.items.length)
+      setActivities((prev) => (resetOffset ? data.items : [...prev, ...data.items]))
+    } catch {
+      /* swallow — non-critical */
+    } finally {
+      setActivitiesLoading(false)
+    }
+  }
+
   const refresh = async () => {
     if (!id) return
     try {
@@ -57,8 +112,53 @@ export function ProjectDetailPage() {
 
   useEffect(() => {
     refresh()
+    fetchActivities(true)
+    fetchMembers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // Refetch activities whenever project state changes (so new uploads/gen show up)
+  useEffect(() => {
+    if (project) fetchActivities(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.documents.length, project?.presentations.length])
+
+  // Poll extraction status for any pending docs. Stops as soon as none remain.
+  useEffect(() => {
+    if (!id || !project) return
+    const pendingIds = project.documents
+      .filter((d) => d.extraction_status === 'pending')
+      .map((d) => d.id)
+    if (pendingIds.length === 0) return
+
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const results = await Promise.all(
+          pendingIds.map((did) =>
+            projectsApi.documentStatus(id, did).then((r) => r.data).catch(() => null),
+          ),
+        )
+        if (cancelled) return
+        const stillPending = results.some(
+          (r) => r && r.extraction_status === 'pending',
+        )
+        const anyChanged = results.some(
+          (r) => r && r.extraction_status !== 'pending',
+        )
+        if (anyChanged) refresh()
+        if (stillPending && !cancelled) timer = setTimeout(tick, 2000)
+      } catch {
+        /* swallow — next refresh will resync */
+      }
+    }
+    let timer: ReturnType<typeof setTimeout> = setTimeout(tick, 2000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, project?.documents.map((d) => `${d.id}:${d.extraction_status}`).join(',')])
 
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length || !id) return
@@ -114,6 +214,38 @@ export function ProjectDetailPage() {
       refresh()
     } catch (e: any) {
       toast.error('Retry failed', e?.response?.data?.detail ?? e?.message ?? '')
+    }
+  }
+
+  const handleDeleteDeck = async (linkId: string) => {
+    if (!id) return
+    if (!confirm('Delete this deck? It will be removed from the project AND from your decks library.')) return
+    try {
+      await projectsApi.deletePresentation(id, linkId)
+      toast.success('Deck deleted')
+      refresh()
+    } catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.detail ?? e?.message ?? '')
+    }
+  }
+
+  const handleRegenerate = async (linkId: string) => {
+    if (!id) return
+    const tid = toast.loading('Regenerating deck', 'AI is rebuilding from your documents…')
+    try {
+      const { data } = await projectsApi.regeneratePresentation(id, linkId)
+      toast.update(tid, {
+        variant: 'success',
+        title: `Regenerated v${data.version}`,
+        description: `${data.slide_count} slides ready.`,
+      })
+      navigate(`/presentations/${data.presentation_id}`)
+    } catch (e: any) {
+      toast.update(tid, {
+        variant: 'error',
+        title: 'Regeneration failed',
+        description: e?.response?.data?.detail ?? e?.message ?? '',
+      })
     }
   }
 
@@ -217,15 +349,31 @@ export function ProjectDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleDeleteProject}>
-              <Trash2 size={13} />
-              Delete
-            </Button>
+            {myRole && myRole !== 'owner' && (
+              <span
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                style={{
+                  background: 'var(--surface)',
+                  color: 'var(--ink-soft)',
+                  border: '1px solid var(--line)',
+                }}
+                title={`Your role on this project`}
+              >
+                {myRole}
+              </span>
+            )}
+            {isOwner && (
+              <Button variant="ghost" onClick={handleDeleteProject}>
+                <Trash2 size={13} />
+                Delete
+              </Button>
+            )}
             <Button
               variant="primary"
               onClick={() => setShowGenerate(true)}
-              disabled={!canGenerate}
+              disabled={!canGenerate || !canEdit}
               leadingIcon={<Sparkles size={13} />}
+              title={!canEdit ? 'Editor or owner role required' : undefined}
             >
               Generate deck
             </Button>
@@ -286,6 +434,7 @@ export function ProjectDetailPage() {
               {project.documents.map((d, i) => (
                 <DocumentRow
                   key={d.id}
+                  projectId={id!}
                   doc={d}
                   isLast={i === project.documents.length - 1}
                   onDelete={() => handleDeleteDoc(d.id)}
@@ -323,10 +472,9 @@ export function ProjectDetailPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {project.presentations.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  onClick={() => navigate(`/presentations/${p.presentation_id}`)}
-                  className="text-left rounded-2xl p-5 transition-all"
+                  className="group rounded-2xl p-5 transition-all relative"
                   style={{
                     background: 'var(--paper-2)',
                     border: '1px solid var(--line)',
@@ -340,32 +488,407 @@ export function ProjectDetailPage() {
                     e.currentTarget.style.transform = 'translateY(0)'
                   }}
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span
-                      className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full"
-                      style={{ background: 'var(--ink-strong)', color: '#fff' }}
-                    >
-                      {p.role}
-                    </span>
-                    <span className="eyebrow">{p.slide_count} slides</span>
-                  </div>
-                  <p
-                    className="font-serif text-[18px] leading-tight tracking-tighter mb-1"
-                    style={{ color: 'var(--ink-strong)' }}
+                  <button
+                    onClick={() => navigate(`/presentations/${p.presentation_id}`)}
+                    className="text-left w-full"
                   >
-                    {p.title}
-                  </p>
-                  <p className="text-[12px]" style={{ color: 'var(--ink-muted)' }}>
-                    Generated from {p.source_document_ids.length}{' '}
-                    {p.source_document_ids.length === 1 ? 'doc' : 'docs'}
-                  </p>
-                </button>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full"
+                        style={{ background: 'var(--ink-strong)', color: '#fff' }}
+                      >
+                        {p.role}
+                      </span>
+                      <span className="eyebrow">{p.slide_count} slides</span>
+                      {p.version > 1 && (
+                        <span
+                          className="text-[10px] font-bold px-2 py-1 rounded-full"
+                          style={{
+                            background: 'var(--surface)',
+                            color: 'var(--ink-soft)',
+                            border: '1px solid var(--line)',
+                          }}
+                        >
+                          v{p.version}
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className="font-serif text-[18px] leading-tight tracking-tighter mb-1"
+                      style={{ color: 'var(--ink-strong)' }}
+                    >
+                      {p.title}
+                    </p>
+                    <p className="text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+                      Generated from {p.source_document_ids.length}{' '}
+                      {p.source_document_ids.length === 1 ? 'doc' : 'docs'}
+                    </p>
+                  </button>
+
+                  {/* Hover-revealed actions */}
+                  <div
+                    className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRegenerate(p.id) }}
+                      title="Regenerate (creates new version)"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ background: 'var(--surface)', color: 'var(--ink-muted)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--ink-strong)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--ink-muted)' }}
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteDeck(p.id) }}
+                      title="Delete deck"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ background: 'var(--surface)', color: 'var(--ink-muted)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--ink-muted)' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Activity */}
+        <section className="mt-12">
+          <h2
+            className="font-serif text-[24px] tracking-tighter mb-5"
+            style={{ color: 'var(--ink-strong)' }}
+          >
+            Activity
+            <span className="text-[14px] font-normal ml-2" style={{ color: 'var(--ink-muted)' }}>
+              {activitiesTotal}
+            </span>
+          </h2>
+
+          {activities.length === 0 ? (
+            <p className="text-[13px]" style={{ color: 'var(--ink-muted)' }}>
+              {activitiesLoading ? 'Loading…' : 'No activity yet.'}
+            </p>
+          ) : (
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+              {activities.map((a, i) => (
+                <ActivityRow
+                  key={a.id}
+                  activity={a}
+                  isLast={i === activities.length - 1 && activities.length === activitiesTotal}
+                />
+              ))}
+            </div>
+          )}
+          {activities.length < activitiesTotal && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="ghost"
+                onClick={() => fetchActivities(false)}
+                disabled={activitiesLoading}
+              >
+                {activitiesLoading ? 'Loading…' : 'Load more activity'}
+              </Button>
+            </div>
+          )}
+        </section>
+
+        {/* Members */}
+        <section className="mt-12">
+          <div className="flex items-center justify-between mb-5">
+            <h2
+              className="font-serif text-[24px] tracking-tighter"
+              style={{ color: 'var(--ink-strong)' }}
+            >
+              Members
+              <span className="text-[14px] font-normal ml-2" style={{ color: 'var(--ink-muted)' }}>
+                {members.length}
+              </span>
+            </h2>
+          </div>
+
+          {isOwner && (
+            <InviteMemberRow
+              projectId={id!}
+              onAdded={fetchMembers}
+            />
+          )}
+
+          {members.length > 0 && (
+            <div className="rounded-2xl overflow-hidden mt-3" style={{ border: '1px solid var(--line)' }}>
+              {members.map((m, i) => (
+                <MemberRow
+                  key={m.id}
+                  projectId={id!}
+                  member={m}
+                  isLast={i === members.length - 1}
+                  isMe={m.user_id === currentUser?.id}
+                  canManage={isOwner}
+                  onChanged={fetchMembers}
+                />
               ))}
             </div>
           )}
         </section>
       </div>
     </AppLayout>
+  )
+}
+
+// ── Invite + member rows ─────────────────────────────────────────────────────
+
+function InviteMemberRow({
+  projectId,
+  onAdded,
+}: {
+  projectId: string
+  onAdded: () => void
+}) {
+  const toast = useToast()
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<ProjectMemberRole>('editor')
+  const [submitting, setSubmitting] = useState(false)
+
+  const submit = async () => {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) return
+    setSubmitting(true)
+    try {
+      await projectsApi.addMember(projectId, trimmed, role)
+      toast.success('Member added', `${trimmed} is now a ${role}`)
+      setEmail('')
+      onAdded()
+    } catch (e: any) {
+      toast.error('Could not add member', e?.response?.data?.detail ?? e?.message ?? '')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2 rounded-xl"
+      style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
+    >
+      <UserPlus size={14} style={{ color: 'var(--ink-muted)' }} />
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+        placeholder="Invite by email"
+        disabled={submitting}
+        className="flex-1 bg-transparent outline-none text-[13px] px-1"
+        style={{ color: 'var(--ink-strong)' }}
+      />
+      <select
+        value={role}
+        onChange={(e) => setRole(e.target.value as ProjectMemberRole)}
+        disabled={submitting}
+        className="text-[12px] font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+        style={{
+          background: 'var(--paper)',
+          border: '1px solid var(--line)',
+          color: 'var(--ink-strong)',
+        }}
+      >
+        <option value="viewer">Viewer</option>
+        <option value="editor">Editor</option>
+        <option value="owner">Owner</option>
+      </select>
+      <Button
+        variant="primary"
+        onClick={submit}
+        disabled={!email.trim() || submitting}
+      >
+        {submitting ? 'Adding…' : 'Add'}
+      </Button>
+    </div>
+  )
+}
+
+function MemberRow({
+  projectId,
+  member,
+  isLast,
+  isMe,
+  canManage,
+  onChanged,
+}: {
+  projectId: string
+  member: ProjectMemberT
+  isLast: boolean
+  isMe: boolean
+  canManage: boolean
+  onChanged: () => void
+}) {
+  const toast = useToast()
+  const initials = (member.full_name || member.email || '?')
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const handleRoleChange = async (next: ProjectMemberRole) => {
+    if (next === member.role) return
+    try {
+      await projectsApi.updateMemberRole(projectId, member.id, next)
+      toast.success('Role updated', `${member.email} is now a ${next}`)
+      onChanged()
+    } catch (e: any) {
+      toast.error('Could not update role', e?.response?.data?.detail ?? e?.message ?? '')
+    }
+  }
+
+  const handleRemove = async () => {
+    if (!confirm(`Remove ${member.email} from this project?`)) return
+    try {
+      await projectsApi.removeMember(projectId, member.id)
+      toast.success('Member removed')
+      onChanged()
+    } catch (e: any) {
+      toast.error('Could not remove', e?.response?.data?.detail ?? e?.message ?? '')
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-3 px-5 py-3.5"
+      style={{
+        background: 'var(--paper)',
+        borderBottom: isLast ? 'none' : '1px solid var(--line)',
+      }}
+    >
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+        style={{ background: 'var(--ink-strong)', color: '#fff' }}
+      >
+        {initials}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13.5px] font-medium" style={{ color: 'var(--ink-strong)' }}>
+          {member.full_name || member.email}
+          {isMe && (
+            <span className="ml-2 text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+              (you)
+            </span>
+          )}
+        </p>
+        <p className="text-[11.5px] truncate" style={{ color: 'var(--ink-muted)' }}>
+          {member.email}
+        </p>
+      </div>
+      {canManage && !isMe ? (
+        <select
+          value={member.role}
+          onChange={(e) => handleRoleChange(e.target.value as ProjectMemberRole)}
+          className="text-[12px] font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--line)',
+            color: 'var(--ink-strong)',
+          }}
+        >
+          <option value="viewer">Viewer</option>
+          <option value="editor">Editor</option>
+          <option value="owner">Owner</option>
+        </select>
+      ) : (
+        <span
+          className="text-[11px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide"
+          style={{
+            background: 'var(--surface)',
+            color: 'var(--ink-soft)',
+            border: '1px solid var(--line)',
+          }}
+        >
+          {member.role}
+        </span>
+      )}
+      {canManage && !isMe && (
+        <button
+          onClick={handleRemove}
+          title="Remove member"
+          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: 'var(--ink-muted)' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--accent-soft, rgba(220,38,38,0.08))'
+            e.currentTarget.style.color = 'var(--accent)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--ink-muted)'
+          }}
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Activity row ─────────────────────────────────────────────────────────────
+
+const ACTIVITY_ICONS: Record<string, { Icon: any; tone: string }> = {
+  project_created: { Icon: Sparkles, tone: 'var(--ink-strong)' },
+  project_updated: { Icon: Edit3, tone: 'var(--ink-muted)' },
+  document_uploaded: { Icon: FilePlus, tone: 'var(--ink-strong)' },
+  document_deleted: { Icon: FileX, tone: 'var(--accent)' },
+  extraction_completed: { Icon: FileCheck, tone: '#16A34A' },
+  extraction_failed: { Icon: AlertCircle, tone: 'var(--accent)' },
+  presentation_generated: { Icon: Sparkles, tone: 'var(--ink-strong)' },
+  presentation_regenerated: { Icon: RefreshCw, tone: 'var(--ink-strong)' },
+  presentation_deleted: { Icon: Trash2, tone: 'var(--accent)' },
+  member_added: { Icon: UserPlus, tone: 'var(--ink-strong)' },
+}
+
+function ActivityRow({ activity, isLast }: { activity: ProjectActivityT; isLast: boolean }) {
+  const meta = ACTIVITY_ICONS[activity.action] || { Icon: ActivityIcon, tone: 'var(--ink-muted)' }
+  const { Icon, tone } = meta
+  const when = new Date(activity.created_at)
+  const diffMs = Date.now() - when.getTime()
+  const mins = Math.floor(diffMs / 60000)
+  const hours = Math.floor(diffMs / 3600000)
+  const days = Math.floor(diffMs / 86400000)
+  const rel =
+    mins < 1
+      ? 'just now'
+      : mins < 60
+      ? `${mins}m ago`
+      : hours < 24
+      ? `${hours}h ago`
+      : days < 7
+      ? `${days}d ago`
+      : when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+
+  return (
+    <div
+      className="flex items-start gap-3 px-5 py-3.5"
+      style={{
+        background: 'var(--paper)',
+        borderBottom: isLast ? 'none' : '1px solid var(--line)',
+      }}
+    >
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+        style={{ background: 'var(--surface)', color: tone }}
+      >
+        <Icon size={13} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] leading-snug" style={{ color: 'var(--ink-strong)' }}>
+          {activity.summary || activity.action.replace(/_/g, ' ')}
+        </p>
+        <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-muted)' }}>
+          {activity.actor_name && <span>{activity.actor_name} · </span>}
+          {rel}
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -430,16 +953,24 @@ function DropZone({
 // ── Document row ─────────────────────────────────────────────────────────────
 
 function DocumentRow({
+  projectId,
   doc,
   isLast,
   onDelete,
   onRetry,
 }: {
+  projectId: string
   doc: ProjectDocument
   isLast: boolean
   onDelete: () => void
   onRetry: () => void
 }) {
+  const toast = useToast()
+  const [expanded, setExpanded] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
   const statusMeta: Record<typeof doc.extraction_status, { label: string; color: string; Icon: any }> = {
     complete: { label: 'Ready', color: '#16A34A', Icon: CheckCircle2 },
     pending: { label: 'Extracting', color: 'var(--ink-muted)', Icon: Clock },
@@ -447,49 +978,95 @@ function DocumentRow({
   }
   const { label, color, Icon } = statusMeta[doc.extraction_status]
 
+  const togglePreview = async () => {
+    if (expanded) {
+      setExpanded(false)
+      return
+    }
+    setExpanded(true)
+    if (preview !== null || previewError !== null) return
+    setPreviewLoading(true)
+    try {
+      const { data } = await projectsApi.getDocument(projectId, doc.id)
+      setPreview(data.extracted_text ?? '')
+      setPreviewError(data.extraction_error ?? null)
+    } catch (e: any) {
+      setPreviewError(e?.response?.data?.detail ?? e?.message ?? 'Failed to load')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const handleDownload = async () => {
+    try {
+      await projectsApi.downloadDocument(projectId, doc.id, doc.original_filename)
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.detail ?? e?.message ?? '')
+    }
+  }
+
+  const previewable = doc.extraction_status === 'complete' || doc.extraction_status === 'failed'
+  const truncatePreviewAt = 3000
+  const previewTruncated = preview && preview.length > truncatePreviewAt
+  const previewShown = previewTruncated ? preview!.slice(0, truncatePreviewAt) : preview
+
   return (
     <div
-      className="flex items-center gap-4 px-5 py-4"
       style={{
         background: 'var(--paper)',
-        borderBottom: isLast ? 'none' : '1px solid var(--line)',
+        borderBottom: isLast && !expanded ? 'none' : '1px solid var(--line)',
       }}
     >
-      <div
-        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: 'var(--surface)', color: 'var(--ink-muted)' }}
-      >
-        <FileText size={14} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p
-          className="text-[13.5px] font-medium truncate"
-          style={{ color: 'var(--ink-strong)' }}
-        >
-          {doc.original_filename}
-          {doc.version > 1 && (
-            <span className="ml-2 text-[11px]" style={{ color: 'var(--ink-muted)' }}>
-              v{doc.version}
-            </span>
-          )}
-        </p>
-        <div className="flex items-center gap-3 mt-0.5 text-[11.5px]" style={{ color: 'var(--ink-muted)' }}>
-          <span className="uppercase">{doc.format}</span>
-          <span>{formatBytes(doc.size_bytes)}</span>
-          <span className="inline-flex items-center gap-1" style={{ color }}>
-            <Icon size={11} />
-            {label}
-          </span>
-        </div>
-      </div>
-      {doc.extraction_status === 'failed' && (
+      <div className="flex items-center gap-3 px-5 py-4">
         <button
-          onClick={onRetry}
+          onClick={togglePreview}
+          disabled={!previewable}
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
+          style={{
+            color: previewable ? 'var(--ink-muted)' : 'var(--ink-faint)',
+            cursor: previewable ? 'pointer' : 'default',
+          }}
+          title={previewable ? (expanded ? 'Hide extracted text' : 'Show extracted text') : 'Extracting…'}
+          onMouseEnter={(e) => {
+            if (previewable) e.currentTarget.style.color = 'var(--ink-strong)'
+          }}
+          onMouseLeave={(e) => {
+            if (previewable) e.currentTarget.style.color = 'var(--ink-muted)'
+          }}
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: 'var(--surface)', color: 'var(--ink-muted)' }}
+        >
+          <FileText size={14} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13.5px] font-medium truncate" style={{ color: 'var(--ink-strong)' }}>
+            {doc.original_filename}
+            {doc.version > 1 && (
+              <span className="ml-2 text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+                v{doc.version}
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-3 mt-0.5 text-[11.5px]" style={{ color: 'var(--ink-muted)' }}>
+            <span className="uppercase">{doc.format}</span>
+            <span>{formatBytes(doc.size_bytes)}</span>
+            <span className="inline-flex items-center gap-1" style={{ color }}>
+              <Icon size={11} className={doc.extraction_status === 'pending' ? 'animate-spin' : ''} />
+              {label}
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={handleDownload}
           className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
           style={{ color: 'var(--ink-muted)' }}
-          title="Retry extraction"
+          title="Download original"
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(10,9,7,0.05)'
+            e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
             e.currentTarget.style.color = 'var(--ink-strong)'
           }}
           onMouseLeave={(e) => {
@@ -497,25 +1074,95 @@ function DocumentRow({
             e.currentTarget.style.color = 'var(--ink-muted)'
           }}
         >
-          <RefreshCw size={13} />
+          <Download size={13} />
         </button>
+        {doc.extraction_status === 'failed' && (
+          <button
+            onClick={onRetry}
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            style={{ color: 'var(--ink-muted)' }}
+            title="Retry extraction"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+              e.currentTarget.style.color = 'var(--ink-strong)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--ink-muted)'
+            }}
+          >
+            <RefreshCw size={13} />
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: 'var(--ink-muted)' }}
+          title="Delete"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--accent-soft, rgba(220,38,38,0.08))'
+            e.currentTarget.style.color = 'var(--accent)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--ink-muted)'
+          }}
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      {expanded && (
+        <div
+          className="px-5 pb-4 -mt-1"
+          style={{ background: 'var(--surface)' }}
+        >
+          {previewLoading && (
+            <p className="text-[12px] py-3" style={{ color: 'var(--ink-muted)' }}>
+              Loading extracted text…
+            </p>
+          )}
+          {!previewLoading && previewError && (
+            <div
+              className="rounded-lg px-3 py-2 text-[12px]"
+              style={{ background: 'var(--accent-soft, rgba(220,38,38,0.08))', color: 'var(--accent)' }}
+            >
+              <strong>Extraction error:</strong> {previewError}
+            </div>
+          )}
+          {!previewLoading && !previewError && preview !== null && (
+            <>
+              {preview === '' ? (
+                <p className="text-[12px] py-3 italic" style={{ color: 'var(--ink-muted)' }}>
+                  No extracted text yet.
+                </p>
+              ) : (
+                <pre
+                  className="text-[11.5px] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg max-h-72 overflow-y-auto"
+                  style={{
+                    background: 'var(--paper)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink-strong)',
+                  }}
+                >
+                  {previewShown}
+                </pre>
+              )}
+              {previewTruncated && (
+                <button
+                  onClick={handleDownload}
+                  className="mt-2 text-[11.5px] font-semibold transition-colors"
+                  style={{ color: 'var(--ink-soft)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--ink-strong)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ink-soft)')}
+                >
+                  Showing first {truncatePreviewAt.toLocaleString()} chars · Download original →
+                </button>
+              )}
+            </>
+          )}
+        </div>
       )}
-      <button
-        onClick={onDelete}
-        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-        style={{ color: 'var(--ink-muted)' }}
-        title="Delete"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'var(--accent-soft, rgba(220,38,38,0.08))'
-          e.currentTarget.style.color = 'var(--accent)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-          e.currentTarget.style.color = 'var(--ink-muted)'
-        }}
-      >
-        <Trash2 size={13} />
-      </button>
     </div>
   )
 }

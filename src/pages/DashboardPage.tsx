@@ -345,7 +345,7 @@ function DeckCard({
         onClick={onOpen}
         className="relative aspect-[16/9] rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ease-out"
         style={{
-          background: '#0A0907',
+          background: 'var(--paper-2)', border: '1px solid var(--line)',
           boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)',
         }}
         onMouseEnter={(e) => {
@@ -472,7 +472,7 @@ function FeaturedTemplateCard({ t, onClick }: { t: TemplateListItem; onClick: ()
         ref={ref}
         className="aspect-[16/9] relative overflow-hidden rounded-2xl transition-all duration-300 ease-out"
         style={{
-          background: '#0A0907',
+          background: 'var(--paper-2)', border: '1px solid var(--line)',
           boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)',
         }}
         onMouseEnter={(e) => {
