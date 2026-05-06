@@ -20,7 +20,9 @@
       "Bash(npx tsc *)",
       "Bash(git fetch *)",
       "Bash(rm package-lock.json)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(pip install *)",
+      "Bash(git add *)"
     ]
   }
 }
