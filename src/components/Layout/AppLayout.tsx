@@ -3,23 +3,49 @@ import {
   LayoutTemplate,
   Library,
   Home,
-  Settings,
   ChevronsLeft,
   ChevronsRight,
   Plus,
   FolderKanban,
+  LogOut,
+  Check,
+  Pencil,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import { useToast } from '../ui/Toast'
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const { user, logout, setUser } = useAuthStore()
   const toast = useToast()
 
+  const [showProfile, setShowProfile] = useState(false)
+  const [editName, setEditName] = useState(user?.full_name ?? '')
+  const [editingName, setEditingName] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showProfile) return
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfile(false)
+        setEditingName(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showProfile])
+
+  const handleSaveName = () => {
+    if (!user || !editName.trim()) return
+    setUser({ ...user, full_name: editName.trim() })
+    setEditingName(false)
+  }
+
   const handleLogout = async () => {
+    setShowProfile(false)
     const firstName = user?.full_name?.split(' ')[0]
     const toastId = toast.loading('Signing you out…', 'Clearing your session.')
     await new Promise((r) => setTimeout(r, 700))
@@ -118,13 +144,14 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         </button>
 
         <button
-          onClick={handleLogout}
+          onClick={() => setShowProfile((v) => !v)}
           title={user?.full_name ?? 'Account'}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 transition-all duration-150"
           style={{
-            background: 'var(--ink-strong)',
+            background: showProfile ? 'var(--ink)' : 'var(--ink-strong)',
             color: '#fff',
             letterSpacing: '0.04em',
+            boxShadow: showProfile ? '0 0 0 2px var(--paper-2), 0 0 0 3px var(--ink-soft)' : 'none',
           }}
         >
           {initials}
@@ -261,57 +288,162 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
       <div className="flex-1" />
 
-      {/* Bottom user row */}
+      {/* Bottom user section */}
       <div
-        className="px-3 py-3"
+        ref={profileRef}
+        className="relative px-3 pt-2 pb-3"
         style={{ borderTop: '1px solid var(--line)' }}
       >
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2.5 flex-1 px-2 py-2 rounded-xl transition-all duration-150 text-left min-w-0"
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(10,9,7,0.05)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        {/* Profile panel — floats above */}
+        {showProfile && (
+          <div
+            className="absolute bottom-full left-3 right-3 mb-2 rounded-2xl overflow-hidden"
+            style={{
+              background: 'var(--paper)',
+              border: '1px solid var(--line)',
+              boxShadow: '0 4px 6px rgba(15,14,12,0.06), 0 16px 40px -8px rgba(15,14,12,0.18)',
+            }}
           >
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-              style={{
-                background: 'var(--ink-strong)',
-                color: '#fff',
-                letterSpacing: '0.04em',
-              }}
-            >
-              {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p
-                className="text-[12.5px] font-semibold truncate leading-tight"
-                style={{ color: 'var(--ink-strong)' }}
+            {/* Panel header */}
+            <div className="px-4 pt-4 pb-3 flex items-center gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+                style={{ background: 'var(--ink-strong)', color: '#fff', letterSpacing: '0.04em' }}
               >
-                {user?.full_name ?? 'Account'}
-              </p>
-              <p className="text-[11px] truncate leading-tight mt-0.5" style={{ color: 'var(--ink-faint)' }}>
-                Sign out
-              </p>
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold truncate leading-tight" style={{ color: 'var(--ink-strong)' }}>
+                  {user?.full_name ?? 'Account'}
+                </p>
+                <p className="text-[11.5px] truncate leading-tight mt-0.5" style={{ color: 'var(--ink-faint)' }}>
+                  {user?.email}
+                </p>
+              </div>
             </div>
-          </button>
 
-          <button
-            title="Settings"
-            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 flex-shrink-0"
-            style={{ color: 'var(--ink-faint)' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
-              e.currentTarget.style.color = 'var(--ink)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'var(--ink-faint)'
-            }}
+            {/* Display name edit */}
+            <div className="px-4 py-3.5" style={{ borderBottom: '1px solid var(--line)' }}>
+              <p
+                className="text-[10.5px] font-semibold uppercase mb-2.5"
+                style={{ color: 'var(--ink-faint)', letterSpacing: '0.08em' }}
+              >
+                Display name
+              </p>
+              {editingName ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName()
+                      if (e.key === 'Escape') {
+                        setEditingName(false)
+                        setEditName(user?.full_name ?? '')
+                      }
+                    }}
+                    className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none"
+                    style={{
+                      background: 'var(--surface)',
+                      border: '1px solid var(--ink-strong)',
+                      color: 'var(--ink-strong)',
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveName}
+                      className="flex-1 h-8 rounded-lg text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all duration-150"
+                      style={{ background: 'var(--ink-strong)', color: '#fff' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.88')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                    >
+                      <Check size={12} strokeWidth={2.5} />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingName(false)
+                        setEditName(user?.full_name ?? '')
+                      }}
+                      className="flex-1 h-8 rounded-lg text-[12px] transition-all duration-150"
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--ink-muted)',
+                        border: '1px solid var(--line)',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setEditName(user?.full_name ?? ''); setEditingName(true) }}
+                  className="w-full flex items-center justify-between h-9 px-3 rounded-lg text-[13px] group transition-all duration-150 text-left"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--ink-strong)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--ink-soft)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+                >
+                  <span className="truncate">{user?.full_name ?? 'Set a name'}</span>
+                  <Pencil
+                    size={12}
+                    className="ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ color: 'var(--ink-faint)' }}
+                  />
+                </button>
+              )}
+            </div>
+
+            {/* Sign out inside panel */}
+            <div className="px-3 py-2">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-3 h-9 rounded-xl text-[12.5px] transition-all duration-150 text-left"
+                style={{ color: 'var(--accent)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-soft)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <LogOut size={13} />
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* User row — click to toggle panel */}
+        <button
+          onClick={() => { setShowProfile((v) => !v); setEditingName(false) }}
+          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-xl transition-all duration-150 text-left min-w-0"
+          style={{ background: showProfile ? 'rgba(10,9,7,0.06)' : 'transparent' }}
+          onMouseEnter={(e) => { if (!showProfile) e.currentTarget.style.background = 'rgba(10,9,7,0.05)' }}
+          onMouseLeave={(e) => { if (!showProfile) e.currentTarget.style.background = 'transparent' }}
+        >
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+            style={{ background: 'var(--ink-strong)', color: '#fff', letterSpacing: '0.04em' }}
           >
-            <Settings size={14} strokeWidth={1.8} />
-          </button>
-        </div>
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12.5px] font-semibold truncate leading-tight" style={{ color: 'var(--ink-strong)' }}>
+              {user?.full_name ?? 'Account'}
+            </p>
+            <p className="text-[11px] truncate leading-tight mt-0.5" style={{ color: 'var(--ink-faint)' }}>
+              {user?.email}
+            </p>
+          </div>
+          <div
+            className="w-4 h-4 flex-shrink-0 transition-transform duration-200"
+            style={{ color: 'var(--ink-faint)', transform: showProfile ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </button>
       </div>
     </aside>
   )

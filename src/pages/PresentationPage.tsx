@@ -5,9 +5,15 @@ import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { PropertyPanel } from '../components/Presentation/SlideEditor'
 import { ThemePanel } from '../components/Presentation/ThemePanel'
 import { SlideChat } from '../components/Presentation/SlideChat'
+import { EditorToolbar } from '../components/Presentation/EditorToolbar'
+import { ChartModal } from '../components/Presentation/ChartModal'
+import { AddSlideMenu, type SlideTemplateKind } from '../components/Presentation/AddSlideMenu'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
-import type { PresentationDetail, Slide, Styling, Theme } from '../types'
+import type {
+  Block, ChartDataPoint, ChartType,
+  PresentationDetail, Position, Slide, Styling, Theme,
+} from '../types'
 
 type SaveStatus = 'idle' | 'saving' | 'saved'
 type CtxMenu = { index: number; x: number; y: number } | null
@@ -79,27 +85,89 @@ function getCanvasBg(hex: string): string {
   return hex
 }
 
-function makeBlankSlide(order: number, theme: ThemePreset): Slide {
-  return {
+function makeSlideOfKind(kind: SlideTemplateKind, order: number, theme: ThemePreset): Slide {
+  const base: Pick<Slide, 'order' | 'type' | 'background'> = {
     order,
-    type: 'content',
+    type: kind,
     background: { type: 'color', value: theme.colors.background },
-    blocks: [
-      {
-        id: crypto.randomUUID(),
-        type: 'title',
-        content: 'New Slide',
-        position: { x: 80, y: 260, w: 1120, h: 120 },
-        styling: {
-          font_family: theme.fonts.heading,
-          font_size: 52,
-          font_weight: 800,
-          color: theme.colors.heading,
-          background_color: 'transparent',
-          text_align: 'left',
-        },
-      },
-    ],
+  }
+  const titleStyle: Styling = {
+    font_family: theme.fonts.heading, font_size: 56, font_weight: 800,
+    color: theme.colors.heading, background_color: 'transparent', text_align: 'left',
+  }
+  const subtitleStyle: Styling = {
+    font_family: theme.fonts.body, font_size: 22, font_weight: 400,
+    color: theme.colors.body, background_color: 'transparent', text_align: 'left',
+  }
+  const bodyStyle: Styling = {
+    font_family: theme.fonts.body, font_size: 20, font_weight: 400,
+    color: theme.colors.body, background_color: 'transparent', text_align: 'left',
+  }
+  const id = () => crypto.randomUUID()
+
+  if (kind === 'title') {
+    return {
+      ...base,
+      blocks: [
+        { id: id(), type: 'title',    content: 'Presentation Title', position: { x: 80, y: 260, w: 1120, h: 140 }, styling: { ...titleStyle, font_size: 72, text_align: 'center' } },
+        { id: id(), type: 'subtitle', content: 'Subtitle goes here', position: { x: 80, y: 410, w: 1120, h: 60  }, styling: { ...subtitleStyle, text_align: 'center' } },
+      ],
+    }
+  }
+  if (kind === 'agenda') {
+    return {
+      ...base,
+      blocks: [
+        { id: id(), type: 'heading', content: 'Agenda', position: { x: 80, y: 80, w: 1120, h: 90 }, styling: { ...titleStyle, font_size: 48 } },
+        { id: id(), type: 'bullet',  content: '• First topic\n• Second topic\n• Third topic\n• Fourth topic', position: { x: 80, y: 200, w: 1120, h: 440 }, styling: bodyStyle },
+      ],
+    }
+  }
+  if (kind === 'content') {
+    return {
+      ...base,
+      blocks: [
+        { id: id(), type: 'heading', content: 'Section heading', position: { x: 80, y: 80, w: 1120, h: 90 }, styling: { ...titleStyle, font_size: 48 } },
+        { id: id(), type: 'body',    content: 'Add your content here. Click any element to select it, double-click to edit.', position: { x: 80, y: 200, w: 1120, h: 440 }, styling: bodyStyle },
+      ],
+    }
+  }
+  // blank
+  return { ...base, blocks: [] }
+}
+
+function makeImageBlock(src: string): Block {
+  return {
+    id: crypto.randomUUID(),
+    type: 'image',
+    content: src,
+    position: { x: 440, y: 220, w: 400, h: 280 },
+    styling: {},
+  }
+}
+
+function makeChartBlock(chartType: ChartType, data: ChartDataPoint[]): Block {
+  return {
+    id: crypto.randomUUID(),
+    type: 'chart',
+    content: '',
+    position: { x: 380, y: 180, w: 520, h: 360 },
+    styling: { background_color: 'rgba(255,255,255,0.04)' },
+    chart_type: chartType,
+    chart_data: data,
+  }
+}
+
+function makeTextBlock(theme: ThemePreset): Block {
+  return {
+    id: crypto.randomUUID(),
+    type: 'text',
+    content: 'Double-click to edit',
+    position: { x: 480, y: 320, w: 320, h: 60 },
+    styling: {
+      font_family: theme.fonts.body, font_size: 22, font_weight: 500,
+      color: theme.colors.body, background_color: 'transparent', text_align: 'left',
+    },
   }
 }
 
@@ -127,6 +195,13 @@ export function PresentationPage() {
 
   // AI Chat panel
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Chart insert / edit modal
+  const [chartModalOpen, setChartModalOpen]   = useState(false)
+  const [editingChartId, setEditingChartId]   = useState<string | null>(null)
+
+  // Hidden file input for image upload
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Drag-and-drop for slide reordering
   const [dragIdx, setDragIdx]   = useState<number | null>(null)
@@ -309,13 +384,136 @@ export function PresentationPage() {
   }, [id])
 
   // ── Slide management ────────────────────────────────────────────────────────
-  const addSlide = () => {
-    const newSlide = makeBlankSlide(slides.length + 1, activeTheme)
+  const addSlideOfKind = (kind: SlideTemplateKind) => {
+    const newSlide = makeSlideOfKind(kind, slides.length + 1, activeTheme)
     setSlides((prev) => [...prev, newSlide])
     setActiveSlide(slides.length)
     setSelectedBlockId(null)
     setEditingBlockId(null)
   }
+
+  // Insert a new slide directly after the currently active slide.
+  // Used by the toolbar's "+ Slide" button — feels more natural than appending
+  // to the end when you're working in the middle of a deck.
+  const insertSlideAfterCurrent = (kind: SlideTemplateKind) => {
+    const insertAt = activeSlide + 1
+    const newSlide = makeSlideOfKind(kind, insertAt + 1, activeTheme)
+    setSlides((prev) => {
+      const next = [...prev.slice(0, insertAt), newSlide, ...prev.slice(insertAt)]
+      return next.map((s, i) => ({ ...s, order: i + 1 }))
+    })
+    setActiveSlide(insertAt)
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
+  }
+
+  const applyLayoutToCurrentSlide = (kind: SlideTemplateKind) => {
+    setSlides((prev) =>
+      prev.map((s, i) => i !== activeSlide ? s : {
+        ...makeSlideOfKind(kind, s.order, activeTheme),
+        order: s.order,
+      })
+    )
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
+  }
+
+  // ── Block insert / delete / move / resize ───────────────────────────────────
+  const insertBlock = (block: Block) => {
+    setSlides((prev) =>
+      prev.map((s, i) => i !== activeSlide ? s : { ...s, blocks: [...s.blocks, block] })
+    )
+    setSelectedBlockId(block.id)
+    setEditingBlockId(null)
+  }
+
+  const handleInsertText = () => {
+    insertBlock(makeTextBlock(activeTheme))
+  }
+
+  const handleInsertImageClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleImageFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-uploading the same file
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const src = reader.result as string
+      insertBlock(makeImageBlock(src))
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleInsertChart = () => {
+    setEditingChartId(null)
+    setChartModalOpen(true)
+  }
+
+  const handleEditChart = () => {
+    if (!selectedBlockId) return
+    setEditingChartId(selectedBlockId)
+    setChartModalOpen(true)
+  }
+
+  const handleChartSubmit = (chartType: ChartType, data: ChartDataPoint[]) => {
+    if (editingChartId) {
+      setSlides((prev) =>
+        prev.map((s, i) => i !== activeSlide ? s : {
+          ...s,
+          blocks: s.blocks.map((b) =>
+            b.id === editingChartId ? { ...b, chart_type: chartType, chart_data: data } : b
+          ),
+        })
+      )
+    } else {
+      insertBlock(makeChartBlock(chartType, data))
+    }
+    setChartModalOpen(false)
+    setEditingChartId(null)
+  }
+
+  const deleteBlock = useCallback((blockId: string) => {
+    setSlides((prev) =>
+      prev.map((s, i) => i !== activeSlide ? s : {
+        ...s, blocks: s.blocks.filter((b) => b.id !== blockId),
+      })
+    )
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
+  }, [activeSlide])
+
+  // Delete-key handling for selected block (skip while editing text or in modals)
+  useEffect(() => {
+    if (presentMode || chartModalOpen || themeOpen) return
+    if (!selectedBlockId || editingBlockId) return
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        deleteBlock(selectedBlockId)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedBlockId, editingBlockId, presentMode, chartModalOpen, themeOpen, deleteBlock])
+
+  const handleDeleteSelected = () => {
+    if (selectedBlockId) deleteBlock(selectedBlockId)
+  }
+
+  const handleBlockPositionChange = useCallback((blockId: string, next: Position) => {
+    setSlides((prev) =>
+      prev.map((s, i) => i !== activeSlide ? s : {
+        ...s,
+        blocks: s.blocks.map((b) => b.id === blockId ? { ...b, position: next } : b),
+      })
+    )
+  }, [activeSlide])
 
   const duplicateSlide = (index: number) => {
     const src = slides[index]
@@ -689,23 +887,8 @@ export function PresentationPage() {
           overflowY: 'auto',
           display: 'flex', flexDirection: 'column',
         }}>
-          {/* Add slide button */}
-          <button
-            onClick={addSlide}
-            style={{
-              margin: '10px 8px 4px',
-              background: 'rgba(99,102,241,0.1)',
-              border: '1px dashed rgba(99,102,241,0.4)',
-              borderRadius: 7, color: '#818cf8',
-              fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-              flexShrink: 0,
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.18)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.1)' }}
-          >
-            + Add Slide
-          </button>
+          {/* Add slide menu (Title / Agenda / Content / Blank) */}
+          <AddSlideMenu onPick={addSlideOfKind} />
 
           {/* Slide thumbnails */}
           <div style={{ padding: '4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -763,6 +946,26 @@ export function PresentationPage() {
             setDownloadOpen(false)
           }}
         >
+          {/* Floating editor toolbar */}
+          <div style={{
+            position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 30,
+          }}>
+            <EditorToolbar
+              block={selectedBlock}
+              saveStatus={saveStatus}
+              onStylingChange={(u) => selectedBlock && updateStyling(selectedBlock.id, u)}
+              onInsertText={handleInsertText}
+              onInsertImage={handleInsertImageClick}
+              onInsertChart={handleInsertChart}
+              onAddSlide={insertSlideAfterCurrent}
+              onApplyLayout={applyLayoutToCurrentSlide}
+              onPreview={enterPresent}
+              onDelete={handleDeleteSelected}
+              onEditChart={selectedBlock?.type === 'chart' ? handleEditChart : undefined}
+            />
+          </div>
+
           {currentSlide && (
             <SlidePreview
               slide={currentSlide}
@@ -773,6 +976,8 @@ export function PresentationPage() {
               onBlockClick={handleBlockClick}
               onBlockDoubleClick={handleBlockDoubleClick}
               onBlockContentChange={handleBlockContentChange}
+              editable
+              onBlockPositionChange={handleBlockPositionChange}
             />
           )}
 
@@ -782,7 +987,7 @@ export function PresentationPage() {
             pointerEvents: 'none', whiteSpace: 'nowrap',
           }}>
             {currentSlide?.order} / {slides.length}
-            {'  ·  Click to select  ·  Double-click to edit text'}
+            {'  ·  Click to select  ·  Drag to move  ·  Double-click to edit  ·  Del to remove'}
           </div>
         </div>
 
@@ -876,6 +1081,33 @@ export function PresentationPage() {
           onApply={handleApplyTheme}
         />
       )}
+
+      {/* Chart modal */}
+      {chartModalOpen && (
+        <ChartModal
+          initialType={
+            editingChartId
+              ? (currentSlide?.blocks.find((b) => b.id === editingChartId)?.chart_type ?? 'bar')
+              : 'bar'
+          }
+          initialData={
+            editingChartId
+              ? currentSlide?.blocks.find((b) => b.id === editingChartId)?.chart_data
+              : undefined
+          }
+          onCancel={() => { setChartModalOpen(false); setEditingChartId(null) }}
+          onSubmit={handleChartSubmit}
+        />
+      )}
+
+      {/* Hidden file input for image insert */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageFileSelected}
+        style={{ display: 'none' }}
+      />
 
       {/* Spin keyframe */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

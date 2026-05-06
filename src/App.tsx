@@ -5,6 +5,8 @@ import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DecksPage } from './pages/DecksPage'
 import { TemplatesPage } from './pages/TemplatesPage'
+import { TemplateCreatePage } from './pages/TemplateCreatePage'
+import { UseSimpleTemplatePage } from './pages/UseSimpleTemplatePage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { PresentationPage } from './pages/PresentationPage'
@@ -46,8 +48,16 @@ export default function App() {
           element={<AuthGuard><ProjectDetailPage /></AuthGuard>}
         />
         <Route
+          path="/templates/new"
+          element={<AuthGuard><TemplateCreatePage /></AuthGuard>}
+        />
+        <Route
           path="/templates/:id/create"
           element={<AuthGuard><CreateFromTemplatePage /></AuthGuard>}
+        />
+        <Route
+          path="/templates/:id/use"
+          element={<AuthGuard><UseSimpleTemplatePage /></AuthGuard>}
         />
         <Route
           path="/presentations/:id"

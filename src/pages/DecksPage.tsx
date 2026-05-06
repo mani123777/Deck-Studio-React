@@ -52,7 +52,7 @@ export function DecksPage() {
     <AppLayout>
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
 
-      <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
+      <div className="px-8 pt-12 pb-20">
         <div className="flex items-end justify-between mb-10 flex-wrap gap-4">
           <div>
             <p className="eyebrow mb-3">— Workspace</p>
@@ -95,7 +95,7 @@ export function DecksPage() {
 
         {!loading && presentations.length === 0 && (
           <div
-            className="rounded-3xl px-12 py-16 text-center"
+            className="rounded-2xl py-20 text-center"
             style={{ background: 'var(--surface)', border: '1px dashed var(--line-strong)' }}
           >
             <p
@@ -177,7 +177,7 @@ function DeckCard({
         onClick={onOpen}
         className="relative aspect-[16/9] rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ease-out"
         style={{
-          background: '#0A0907',
+          background: 'var(--paper-2)', border: '1px solid var(--line)',
           boxShadow: '0 1px 1px rgba(15,14,12,0.06), 0 4px 14px -4px rgba(15,14,12,0.10)',
         }}
         onMouseEnter={(e) => {
