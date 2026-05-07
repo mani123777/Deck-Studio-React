@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { presentationsApi, exportApi, themesApi, shareApi } from '../api/client'
+import { presentationsApi, exportApi, themesApi, shareApi, imagesApi } from '../api/client'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { PropertyPanel } from '../components/Presentation/SlideEditor'
 import { ThemePanel } from '../components/Presentation/ThemePanel'
@@ -8,10 +8,17 @@ import { SlideChat } from '../components/Presentation/SlideChat'
 import { EditorToolbar } from '../components/Presentation/EditorToolbar'
 import { ChartModal } from '../components/Presentation/ChartModal'
 import { AddSlideMenu, type SlideTemplateKind } from '../components/Presentation/AddSlideMenu'
+import { NotesPanel } from '../components/Presentation/NotesPanel'
+import { VersionHistoryPanel } from '../components/Presentation/VersionHistoryPanel'
+import {
+  LayoutsPanel,
+  applyLayoutToSlide,
+  makeLayoutFromSlide,
+} from '../components/Presentation/LayoutsPanel'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
 import type {
-  Block, ChartDataPoint, ChartType,
+  Block, ChartDataPoint, ChartType, DeckLayout,
   PresentationDetail, Position, Slide, Styling, Theme,
 } from '../types'
 
@@ -196,6 +203,14 @@ export function PresentationPage() {
   // AI Chat panel
   const [chatOpen, setChatOpen] = useState(false)
 
+  // P1 panels: presenter notes drawer, version history, deck-scoped layouts
+  const [notesOpen, setNotesOpen]       = useState(false)
+  const [historyOpen, setHistoryOpen]   = useState(false)
+  const [layoutsOpen, setLayoutsOpen]   = useState(false)
+  const [layouts, setLayouts]           = useState<DeckLayout[]>([])
+  const [aiImageOpen, setAiImageOpen]   = useState(false)
+  const [aiImageBlockId, setAiImageBlockId] = useState<string | null>(null)
+
   // Chart insert / edit modal
   const [chartModalOpen, setChartModalOpen]   = useState(false)
   const [editingChartId, setEditingChartId]   = useState<string | null>(null)
@@ -241,6 +256,7 @@ export function PresentationPage() {
     presentationsApi.get(id).then(async (r) => {
       setPresentation(r.data)
       setSlides(r.data.slides)
+      setLayouts((r.data as any).layouts ?? [])
 
       const savedPreset = localStorage.getItem(`theme_preset_${id}`)
       if (savedPreset) {
@@ -310,7 +326,7 @@ export function PresentationPage() {
     setSaveStatus('saving')
     debounceRef.current = setTimeout(async () => {
       try {
-        await presentationsApi.update(id, { slides })
+        await presentationsApi.update(id, { slides, layouts })
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus('idle'), 2000)
       } catch {
@@ -318,7 +334,7 @@ export function PresentationPage() {
       }
     }, 500)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [slides, id])
+  }, [slides, layouts, id])
 
   // ── Block interactions ──────────────────────────────────────────────────────
   const handleBlockClick = useCallback((blockId: string) => {
@@ -416,6 +432,56 @@ export function PresentationPage() {
     )
     setSelectedBlockId(null)
     setEditingBlockId(null)
+  }
+
+  // ── Presenter notes ─────────────────────────────────────────────────────────
+  const handleNotesChange = (next: string) => {
+    setSlides((prev) => prev.map((s, i) => i === activeSlide ? { ...s, notes: next } : s))
+  }
+
+  // ── Deck layouts ────────────────────────────────────────────────────────────
+  const handleSaveLayout = (name: string) => {
+    const slide = slides[activeSlide]
+    if (!slide) return
+    setLayouts((prev) => [...prev, makeLayoutFromSlide(slide, name)])
+  }
+  const handleApplySavedLayout = (layout: DeckLayout) => {
+    setSlides((prev) => prev.map((s, i) => i === activeSlide ? applyLayoutToSlide(s, layout) : s))
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
+  }
+  const handleDeleteLayout = (layoutId: string) => {
+    setLayouts((prev) => prev.filter((l) => l.id !== layoutId))
+  }
+
+  // ── Version restore ─────────────────────────────────────────────────────────
+  const handleVersionRestored = (detail: PresentationDetail) => {
+    setPresentation(detail)
+    setSlides(detail.slides)
+    setLayouts((detail as any).layouts ?? [])
+    setActiveSlide(0)
+    setSelectedBlockId(null)
+  }
+
+  // ── AI image generation ─────────────────────────────────────────────────────
+  const handleGenerateImage = async (prompt: string) => {
+    const blockId = aiImageBlockId
+    if (!blockId) return
+    try {
+      const { data } = await imagesApi.generate(prompt)
+      const fullUrl = imagesApi.resolveUrl(data.url)
+      setSlides((prev) => prev.map((s, i) =>
+        i !== activeSlide ? s : {
+          ...s,
+          blocks: s.blocks.map((b) => b.id === blockId ? { ...b, content: fullUrl } : b),
+        },
+      ))
+    } catch (err: any) {
+      alert(err.response?.data?.detail ?? 'Image generation failed')
+    } finally {
+      setAiImageOpen(false)
+      setAiImageBlockId(null)
+    }
   }
 
   // ── Block insert / delete / move / resize ───────────────────────────────────
@@ -966,6 +1032,35 @@ export function PresentationPage() {
             />
           </div>
 
+          {/* P1: secondary toolbar — notes / layouts / history / AI image */}
+          <div style={{
+            position: 'absolute', top: 14, right: 24, zIndex: 30,
+            display: 'flex', gap: 8,
+          }}>
+            <SecondaryBtn
+              label="Notes"
+              active={notesOpen}
+              onClick={() => setNotesOpen((v) => !v)}
+            />
+            <SecondaryBtn
+              label="Layouts"
+              active={layoutsOpen}
+              onClick={() => { setLayoutsOpen((v) => !v); if (historyOpen) setHistoryOpen(false) }}
+            />
+            <SecondaryBtn
+              label="History"
+              active={historyOpen}
+              onClick={() => { setHistoryOpen((v) => !v); if (layoutsOpen) setLayoutsOpen(false) }}
+            />
+            {selectedBlock?.type === 'image' && (
+              <SecondaryBtn
+                label="AI image"
+                active={false}
+                onClick={() => { setAiImageBlockId(selectedBlock.id); setAiImageOpen(true) }}
+              />
+            )}
+          </div>
+
           {currentSlide && (
             <SlidePreview
               slide={currentSlide}
@@ -1079,6 +1174,44 @@ export function PresentationPage() {
           currentThemeId={activeTheme.id}
           onClose={() => setThemeOpen(false)}
           onApply={handleApplyTheme}
+        />
+      )}
+
+      {/* Notes drawer (renders inside main canvas area) */}
+      {notesOpen && currentSlide && (
+        <NotesPanel
+          value={currentSlide.notes ?? ''}
+          slideKey={activeSlide}
+          onChange={handleNotesChange}
+        />
+      )}
+
+      {/* Version history side panel */}
+      {historyOpen && id && (
+        <VersionHistoryPanel
+          presentationId={id}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={handleVersionRestored}
+        />
+      )}
+
+      {/* Layouts side panel */}
+      {layoutsOpen && (
+        <LayoutsPanel
+          layouts={layouts}
+          currentSlide={currentSlide ?? null}
+          onSaveCurrent={handleSaveLayout}
+          onApply={handleApplySavedLayout}
+          onDelete={handleDeleteLayout}
+          onClose={() => setLayoutsOpen(false)}
+        />
+      )}
+
+      {/* AI image generation modal */}
+      {aiImageOpen && (
+        <AiImageModal
+          onCancel={() => { setAiImageOpen(false); setAiImageBlockId(null) }}
+          onSubmit={handleGenerateImage}
         />
       )}
 
@@ -1278,5 +1411,104 @@ function NavBtn({ label, disabled, onClick }: { label: string; disabled: boolean
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >{label}</button>
+  )
+}
+
+// ── Secondary toolbar button (P1 panels) ────────────────────────────────────
+
+function SecondaryBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        height: 32, padding: '0 12px', borderRadius: 8,
+        background: active ? 'rgba(99,102,241,0.22)' : 'rgba(255,255,255,0.06)',
+        border: `1px solid ${active ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
+        color: active ? '#cbd5ff' : 'rgba(255,255,255,0.85)',
+        fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >{label}</button>
+  )
+}
+
+// ── AI image modal ──────────────────────────────────────────────────────────
+
+function AiImageModal({
+  onCancel, onSubmit,
+}: { onCancel: () => void; onSubmit: (prompt: string) => Promise<void> }) {
+  const [prompt, setPrompt] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const handleGo = async () => {
+    if (!prompt.trim() || busy) return
+    setBusy(true)
+    try {
+      await onSubmit(prompt.trim())
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(8px)', zIndex: 200,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 480, background: '#1a1a2e',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 14, padding: 24,
+        }}
+      >
+        <h2 style={{ color: '#fff', fontSize: 18, fontWeight: 600, margin: '0 0 8px 0' }}>
+          Generate image with AI
+        </h2>
+        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12.5, margin: '0 0 16px 0', lineHeight: 1.5 }}>
+          Describe what you want to see. The result will replace the selected image block.
+        </p>
+        <textarea
+          autoFocus
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="A minimalist illustration of a rocket launching into a starfield, soft pastel palette."
+          rows={4}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: 12, color: '#e2e8f0', fontSize: 13, outline: 'none',
+            resize: 'vertical', fontFamily: 'Inter, sans-serif',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
+              color: 'rgba(255,255,255,0.75)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}
+          >Cancel</button>
+          <button
+            onClick={handleGo}
+            disabled={!prompt.trim() || busy}
+            style={{
+              padding: '8px 16px', borderRadius: 8,
+              background: 'rgba(99,102,241,0.9)', border: 'none',
+              color: '#fff', fontSize: 12.5, fontWeight: 600,
+              cursor: (!prompt.trim() || busy) ? 'not-allowed' : 'pointer',
+              opacity: (!prompt.trim() || busy) ? 0.5 : 1,
+            }}
+          >{busy ? 'Generating…' : 'Generate'}</button>
+        </div>
+      </div>
+    </div>
   )
 }
