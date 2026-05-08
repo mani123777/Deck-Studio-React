@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { Paperclip, Sparkles, X, Loader2, ArrowLeft, Mic, Square, Link2 } from 'lucide-react'
 
 interface Props {
-  onGenerate: (prompt: string, slideCount: number, file?: File, url?: string) => void
+  onGenerate: (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+  ) => void
   isGenerating: boolean
 }
 
@@ -22,6 +28,8 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
   const [slideCount, setSlideCount] = useState(5)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [images, setImages] = useState<File[]>([])
+  const imagesRef = useRef<HTMLInputElement>(null)
 
   const [urlOpen, setUrlOpen] = useState(false)
   const [urlValue, setUrlValue] = useState('')
@@ -116,7 +124,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
   const toggleListening = () => (listening ? stopListening() : startListening())
 
   const canSubmit =
-    (prompt.trim().length > 0 || file !== null || !!urlAttached) && !isGenerating
+    (prompt.trim().length > 0 || file !== null || !!urlAttached || images.length > 0) && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -124,12 +132,14 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
     const fallbackPrompt =
       prompt.trim() ||
       (file ? `Create a presentation about ${file.name}` : '') ||
-      (urlAttached ? `Create a presentation summarizing ${urlAttached}` : '')
+      (urlAttached ? `Create a presentation summarizing ${urlAttached}` : '') ||
+      (images.length > 0 ? `Create a presentation from the attached image${images.length > 1 ? 's' : ''}` : '')
     onGenerate(
       fallbackPrompt,
       slideCount,
       file ?? undefined,
       urlAttached ?? undefined,
+      images.length > 0 ? images : undefined,
     )
   }
 
@@ -202,8 +212,27 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
             />
 
             {/* Attached chips */}
-            {(file || urlAttached) && (
+            {(file || urlAttached || images.length > 0) && (
               <div className="mx-7 mb-4 flex flex-wrap items-center gap-2">
+                {images.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                  >
+                    <Paperclip size={11} style={{ color: 'var(--ink-soft)' }} />
+                    <span className="text-[12px] truncate max-w-[160px]" style={{ color: 'var(--ink-strong)' }}>
+                      {img.name}
+                    </span>
+                    <button
+                      onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
+                      className="ml-1 transition-colors"
+                      style={{ color: 'var(--ink-muted)' }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
                 {file && (
                   <div
                     className="inline-flex items-center gap-2 h-8 px-3 rounded-full"
@@ -325,6 +354,40 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
                   accept=".txt,.docx,.pdf"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+
+                <button
+                  onClick={() => imagesRef.current?.click()}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 text-[12.5px] font-medium transition-colors h-8 px-2.5 rounded-lg"
+                  style={{ color: 'var(--ink-soft)' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+                    e.currentTarget.style.color = 'var(--ink-strong)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.color = 'var(--ink-soft)'
+                  }}
+                >
+                  <Paperclip size={13} />
+                  Images
+                  {images.length > 0 && (
+                    <span style={{ fontSize: 10, marginLeft: 2, color: 'var(--ink-muted)' }}>
+                      ({images.length})
+                    </span>
+                  )}
+                </button>
+                <input
+                  ref={imagesRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const next = Array.from(e.target.files ?? []).slice(0, 4)
+                    setImages(next)
+                  }}
                 />
 
                 <span className="w-px h-4" style={{ background: 'var(--line)' }} />

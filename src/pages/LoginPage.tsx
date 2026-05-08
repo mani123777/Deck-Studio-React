@@ -131,13 +131,13 @@ export function LoginPage() {
                   <label className="eyebrow" style={{ color: 'var(--ink-strong)' }}>
                     Password
                   </label>
-                  <a
-                    href="#"
+                  <Link
+                    to="/forgot-password"
                     className="text-[12px] font-semibold underline-offset-4 hover:underline"
                     style={{ color: 'var(--ink-strong)' }}
                   >
                     Forgot password?
-                  </a>
+                  </Link>
                 </div>
                 <div className="relative">
                   <input

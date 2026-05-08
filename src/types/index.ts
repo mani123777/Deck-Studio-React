@@ -134,6 +134,36 @@ export interface Slide {
   type: string
   background?: SlideBackground
   blocks: Block[]
+  notes?: string
+}
+
+export interface DeckLayout {
+  id: string
+  name: string
+  blocks: Block[]
+}
+
+export interface BrandKit {
+  logo_url: string
+  primary_color: string
+  secondary_color: string
+  accent_color: string
+  background_color: string
+  text_color: string
+  heading_font: string
+  body_font: string
+}
+
+export interface PresentationVersion {
+  id: string
+  presentation_id: string
+  version_number: number
+  title: string
+  slide_count: number
+  theme_id: string
+  created_by: string | null
+  label: string
+  created_at: string
 }
 
 export interface PresentationListItem {
@@ -158,6 +188,7 @@ export interface PresentationDetail {
   is_preview: boolean
   created_at: string
   updated_at: string
+  layouts?: DeckLayout[]
 }
 
 export interface GenerationStartResponse {

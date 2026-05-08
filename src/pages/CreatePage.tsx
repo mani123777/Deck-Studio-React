@@ -10,6 +10,13 @@ import { SlidePreview } from '../components/Presentation/SlidePreview'
 
 type Phase = 'prompt' | 'generating' | 'editor'
 
+interface StreamProgress {
+  step: string
+  done: number
+  total: number
+  preview: Slide[]
+}
+
 // Fixed panel widths — canvas scale is stable regardless of block selection
 const LEFT_W  = 192  // slide thumbnail strip
 const RIGHT_W = 264  // property panel
@@ -26,20 +33,84 @@ export function CreatePage() {
   const [editingBlockId, setEditingBlockId]         = useState<string | null>(null)
   const [saving, setSaving]                 = useState(false)
   const [error, setError]                   = useState<string | null>(null)
+  const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null)
 
-  const handleGenerate = async (prompt: string, slideCount: number, file?: File, url?: string) => {
+  const handleGenerate = async (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+  ) => {
     setPhase('generating')
     setError(null)
+    setStreamProgress({ step: 'Starting…', done: 0, total: slideCount, preview: [] })
+
     try {
-      const res = await generationApi.generateSync(prompt, slideCount, file, url)
-      setSlides(res.data.slides)
-      setTheme(res.data.theme)
+      const response = await generationApi.generateStream(prompt, slideCount, file, url, images)
+      if (!response.ok || !response.body) {
+        const text = await response.text().catch(() => '')
+        throw new Error(text || `Stream failed (${response.status})`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const collected: Slide[] = []
+      let collectedTheme: Theme | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse complete SSE events from buffer (\n\n delimited)
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? ''
+
+        for (const raw of events) {
+          if (!raw.trim()) continue
+          const lines = raw.split('\n')
+          const eventLine = lines.find((l) => l.startsWith('event:'))
+          const dataLine = lines.find((l) => l.startsWith('data:'))
+          if (!eventLine || !dataLine) continue
+          const evt = eventLine.slice(6).trim()
+          const data = JSON.parse(dataLine.slice(5).trim())
+
+          if (evt === 'status') {
+            setStreamProgress((prev) => prev ? { ...prev, step: data.message } : prev)
+          } else if (evt === 'theme') {
+            collectedTheme = data
+            setTheme(data)
+          } else if (evt === 'outline') {
+            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slides…' } : prev)
+          } else if (evt === 'slide') {
+            collected.push(data.slide)
+            setSlides([...collected])
+            setStreamProgress((prev) => prev ? {
+              ...prev,
+              done: data.index + 1,
+              total: data.total,
+              step: `Slide ${data.index + 1} of ${data.total}`,
+              preview: [...collected],
+            } : prev)
+          } else if (evt === 'error') {
+            throw new Error(data.message || 'Generation failed')
+          }
+        }
+      }
+
+      if (collected.length === 0 || !collectedTheme) {
+        throw new Error('Stream ended without producing any slides.')
+      }
       setSelectedSlideIndex(0)
       setSelectedBlockId(null)
       setEditingBlockId(null)
+      setStreamProgress(null)
       setPhase('editor')
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? 'Generation failed. Please try again.')
+      setError(e?.message ?? e?.response?.data?.detail ?? 'Generation failed. Please try again.')
+      setStreamProgress(null)
       setPhase('prompt')
     }
   }
@@ -120,6 +191,37 @@ export function CreatePage() {
         {error && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white px-5 py-3 rounded-xl text-sm shadow-lg">
             {error}
+          </div>
+        )}
+        {phase === 'generating' && streamProgress && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(15,15,20,0.92)', backdropFilter: 'blur(12px)',
+            }}
+          >
+            <div style={{ width: 420, textAlign: 'center' }}>
+              <p style={{ fontSize: 11, letterSpacing: 0.6, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>
+                Generating
+              </p>
+              <h2 style={{ fontSize: 22, color: '#fff', fontWeight: 600, margin: '0 0 18px 0' }}>
+                {streamProgress.step}
+              </h2>
+              <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${streamProgress.total > 0 ? (streamProgress.done / streamProgress.total) * 100 : 5}%`,
+                    background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                    transition: 'width 200ms ease',
+                  }}
+                />
+              </div>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0 }}>
+                {streamProgress.done} of {streamProgress.total} slides ready
+              </p>
+            </div>
           </div>
         )}
         <PromptScreen onGenerate={handleGenerate} isGenerating={phase === 'generating'} />
