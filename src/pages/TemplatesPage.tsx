@@ -6,7 +6,7 @@ import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { Button } from '../components/ui/Button'
 import { Chip } from '../components/ui/Chip'
 import type { PreviewResponse, Slide, TemplateListItem, Theme } from '../types'
-import { Loader2, Sparkles, X, Copy, Search, FileText, ArrowUpRight, Plus } from 'lucide-react'
+import { Loader2, Sparkles, X, Copy, Search, ArrowUpRight, Plus } from 'lucide-react'
 
 const SLIDE_W = 1280
 const SLIDE_H = 720
@@ -18,6 +18,45 @@ function resolveThumbnail(url: string): string {
 }
 
 // ── Card thumbnail ──────────────────────────────────────────────────────────
+// Fills the parent thumbnail wrapper (position:relative, aspect-ratio:16/9,
+// overflow:hidden). Does NOT set its own size — parent owns all geometry.
+function PlaceholderThumbnail({ name }: { name: string }) {
+  const hue = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  const accent = `hsl(${hue}, 60%, 58%)`
+  const bg = `hsl(${hue}, 18%, 11%)`
+  const block = 'rgba(255,255,255,0.09)'
+  const blockLight = 'rgba(255,255,255,0.05)'
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: bg,
+        padding: '13% 10% 10%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Accent pill */}
+      <div style={{ width: 28, height: 3, borderRadius: 2, background: accent, marginBottom: '7%', flexShrink: 0 }} />
+      {/* Title line */}
+      <div style={{ width: '72%', height: '13%', borderRadius: 3, background: block, marginBottom: '3.5%', flexShrink: 0 }} />
+      {/* Subtitle line */}
+      <div style={{ width: '48%', height: '7%', borderRadius: 2, background: blockLight, marginBottom: '9%', flexShrink: 0 }} />
+      {/* Content row */}
+      <div style={{ display: 'flex', gap: '4%', flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1.4, borderRadius: 4, background: block }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8%' }}>
+          <div style={{ flex: 1, borderRadius: 3, background: blockLight }} />
+          <div style={{ flex: 1, borderRadius: 3, background: blockLight }} />
+          <div style={{ flex: 1, borderRadius: 3, background: blockLight }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TemplateThumbnail({
   name,
   thumbnailUrl,
@@ -35,6 +74,7 @@ function TemplateThumbnail({
   const hasImage = !!resolved && !imgError
   const hasSlide = !!previewSlide
 
+  // ref sits on the inset-0 fill div; clientWidth == parent's inner width
   const ref = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.2)
   useLayoutEffect(() => {
@@ -47,18 +87,45 @@ function TemplateThumbnail({
     return () => ro.disconnect()
   }, [])
 
+  // Prefer thumbnail image when available; fall back to live slide preview
+  if (hasImage) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        <PlaceholderThumbnail name={name} />
+        <img
+          src={resolved}
+          alt={name}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgError(true)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            opacity: imgLoaded ? 1 : 0,
+            transition: 'opacity 0.3s',
+          }}
+        />
+      </div>
+    )
+  }
+
   if (hasSlide) {
     return (
-      <div ref={ref} className="aspect-[16/9] relative overflow-hidden" style={{ background: 'var(--paper-2)' }}>
+      <div
+        ref={ref}
+        style={{ position: 'absolute', inset: 0, background: '#0A0907', overflow: 'hidden' }}
+      >
         <div
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
+            top: '50%',
+            left: '50%',
             width: SLIDE_W,
             height: SLIDE_H,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
+            transform: `translate(-50%, -50%) scale(${scale})`,
+            transformOrigin: 'center',
           }}
         >
           <SlidePreview slide={previewSlide!} theme={theme ?? undefined} scale={1} />
@@ -67,22 +134,10 @@ function TemplateThumbnail({
     )
   }
 
+  // Pure styled placeholder as last resort
   return (
-    <div className="aspect-[16/9] relative overflow-hidden" style={{ background: 'var(--paper)' }}>
-      {hasImage && (
-        <img
-          src={resolved}
-          alt={name}
-          onLoad={() => setImgLoaded(true)}
-          onError={() => setImgError(true)}
-          className={`w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-        />
-      )}
-      {(!hasImage || !imgLoaded) && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <FileText size={20} style={{ color: 'var(--ink-faint)' }} />
-        </div>
-      )}
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+      <PlaceholderThumbnail name={name} />
     </div>
   )
 }
@@ -384,63 +439,37 @@ export function TemplatesPage() {
 
   return (
     <AppLayout>
-      <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
-        {/* Editorial hero */}
-        <div className="mb-14 max-w-4xl">
-          <p className="eyebrow mb-4">— The library</p>
-          <h1
-            className="font-serif leading-[1.0] tracking-tightest text-[40px] md:text-[56px]"
-            style={{ color: 'var(--ink-strong)' }}
-          >
-            Premium decks,
-            <br />
-            <span className="font-serif-italic" style={{ color: 'var(--accent)' }}>half-written.</span>
-          </h1>
-          <p
-            className="text-[15.5px] mt-7 max-w-xl leading-relaxed"
-            style={{ color: 'var(--ink-soft)' }}
-          >
-            Templates designed by humans, finished by AI. Pick one, paste your idea, and watch it become a deck — layout, typography, and rhythm intact.
-          </p>
-        </div>
+      <div className="px-8 pt-10 pb-20">
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between gap-6 mb-6 flex-wrap">
-          <div className="relative max-w-sm flex-1 min-w-[280px]">
-            <Search
-              size={14}
-              className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: 'var(--ink-faint)' }}
-            />
-            <input
-              type="text"
-              placeholder="Search templates…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-11 pl-11 pr-4 rounded-full text-[13px] focus:outline-none transition-colors"
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--line)',
-                color: 'var(--ink-strong)',
-              }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
-              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <p className="eyebrow">{filtered.length} of {templates.length}</p>
-            <Button
-              variant="primary"
-              onClick={() => navigate('/templates/new')}
-              leadingIcon={<Plus size={13} />}
+        {/* Page header */}
+        <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
+          <div>
+            <p className="eyebrow mb-3">— The library</p>
+            <h1
+              className="font-serif leading-[1.05] tracking-tighter text-[34px] md:text-[44px]"
+              style={{ color: 'var(--ink-strong)' }}
             >
-              Create template
-            </Button>
+              Templates
+            </h1>
+            <p
+              className="text-[14px] mt-2 leading-relaxed"
+              style={{ color: 'var(--ink-soft)' }}
+            >
+              Designed by humans, finished by AI. Pick one, paste your idea, get a deck.
+            </p>
           </div>
+          <Button
+            variant="primary"
+            onClick={() => navigate('/templates/new')}
+            leadingIcon={<Plus size={13} />}
+          >
+            Create template
+          </Button>
         </div>
 
-        {/* Source filter pills */}
-        <div className="flex items-center gap-1 mb-4 flex-wrap">
+        {/* Unified filter bar */}
+        <div className="flex items-center gap-2 mb-8 flex-wrap">
+          {/* Source filter */}
           {([
             { value: 'all', label: 'All' },
             { value: 'mine', label: 'Mine' },
@@ -454,50 +483,89 @@ export function TemplatesPage() {
               {opt.label}
             </Chip>
           ))}
-        </div>
 
-        {/* Category chips */}
-        <div className="flex items-center gap-1 mb-12 flex-wrap">
-          {categories.map((cat) => (
+          {/* Divider */}
+          <div
+            className="w-px h-4 mx-1 flex-shrink-0"
+            style={{ background: 'var(--line-strong)' }}
+          />
+
+          {/* Category chips — skip the 'all' sentinel; clicking active chip resets */}
+          {categories.filter((cat) => cat !== 'all').map((cat) => (
             <Chip
               key={cat}
               active={activeCategory === cat}
-              onClick={() => setActiveCategory(cat)}
+              onClick={() => setActiveCategory(activeCategory === cat ? 'all' : cat)}
             >
-              {cat === 'all' ? 'All' : cat}
+              {cat}
             </Chip>
           ))}
+
+          {/* Spacer */}
+          <div className="flex-1 min-w-[16px]" />
+
+          {/* Search */}
+          <div className="relative flex-shrink-0">
+            <Search
+              size={13}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--ink-faint)' }}
+            />
+            <input
+              type="text"
+              placeholder="Search templates…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 pl-9 pr-4 rounded-xl text-[13px] focus:outline-none transition-colors w-[220px]"
+              style={{
+                background: 'var(--surface)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink-strong)',
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+            />
+          </div>
+
+          {/* Count */}
+          <p className="eyebrow flex-shrink-0">{filtered.length} of {templates.length}</p>
         </div>
 
         {/* Grid */}
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i}>
-                <div className="aspect-[16/9] rounded-2xl shimmer mb-4" />
-                <div className="h-4 w-2/3 mb-2 rounded shimmer" />
-                <div className="h-3 w-1/2 rounded shimmer" />
+              <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="aspect-[16/9] rounded-2xl shimmer flex-shrink-0" />
+                <div style={{ paddingTop: 20 }}>
+                  <div className="h-5 w-2/3 mb-2 rounded shimmer" />
+                  <div className="h-5 w-1/2 mb-3 rounded shimmer" />
+                  <div className="h-3 w-1/3 rounded shimmer" />
+                </div>
               </div>
             ))}
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
-          <div className="text-center py-24">
+          <div
+            className="rounded-2xl py-20 text-center"
+            style={{ background: 'var(--surface)', border: '1px dashed var(--line-strong)' }}
+          >
             <p
-              className="font-serif text-[28px] leading-tight tracking-tighter"
+              className="font-serif text-[28px] leading-tight tracking-tighter mb-2"
               style={{ color: 'var(--ink-strong)' }}
             >
               No matches found
             </p>
-            <p className="text-[14px] mt-2" style={{ color: 'var(--ink-soft)' }}>
+            <p className="text-[14px]" style={{ color: 'var(--ink-soft)' }}>
               Try a different search or category.
             </p>
           </div>
         )}
 
         {!loading && filtered.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-14">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12 items-start">
             {filtered.map((t) => (
               <TemplateCard
                 key={t.id}
@@ -531,12 +599,17 @@ function TemplateCard({
   onCreate: () => void
 }) {
   return (
-    <div className="group">
-      {/* Thumbnail */}
+    <div
+      className="group"
+      style={{ display: 'flex', flexDirection: 'column' }}
+    >
+      {/* Thumbnail — locked 16:9, flex-shrink-0 so it never compresses */}
       <div
         onClick={onView}
         className="relative rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ease-out"
         style={{
+          aspectRatio: '16 / 9',
+          flexShrink: 0,
           boxShadow: '0 1px 1px rgba(15,14,12,0.05), 0 4px 12px -4px rgba(15,14,12,0.08)',
         }}
         onMouseEnter={(e) => {
@@ -557,7 +630,7 @@ function TemplateCard({
           theme={template.theme ?? null}
         />
 
-        {/* Hover actions */}
+        {/* Hover actions — absolute inside thumbnail only, no layout impact */}
         <div className="absolute inset-x-0 bottom-0 p-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300 ease-out">
           <button
             onClick={(e) => { e.stopPropagation(); onView() }}
@@ -586,33 +659,50 @@ function TemplateCard({
         </div>
       </div>
 
-      {/* Caption — editorial under-the-thumbnail */}
-      <div className="pt-5 px-1">
-        <div className="flex items-baseline justify-between gap-3 mb-1">
+      {/* Caption — always below thumbnail, flex column */}
+      <div style={{ paddingTop: 20, display: 'flex', flexDirection: 'column', flex: 1 }}>
+        {/* Title: fixed 2-line height aligns titles across every row.
+            20px × 1.25 leading = 25px/line × 2 = 50px + 6px buffer */}
+        <div style={{ height: 56, overflow: 'hidden', marginBottom: 8, flexShrink: 0 }}>
           <p
-            className="font-serif text-[20px] leading-tight tracking-tighter"
-            style={{ color: 'var(--ink-strong)' }}
+            className="font-serif text-[20px] leading-tight tracking-tighter line-clamp-2"
+            style={{ color: 'var(--ink-strong)', margin: 0 }}
           >
             {template.name}
           </p>
-          <p className="eyebrow flex-shrink-0">{template.total_slides}p</p>
         </div>
-        <p
-          className="text-[12.5px] leading-relaxed line-clamp-2 mb-3"
-          style={{ color: 'var(--ink-soft)' }}
-        >
-          {template.description}
-        </p>
-        <div className="flex items-center gap-3">
+
+        {/* Description: fixed 2-line height aligns descriptions across every row.
+            12.5px × 1.625 leading = 20.3px/line × 2 = 40.6px + 3px buffer */}
+        <div style={{ height: 44, overflow: 'hidden', marginBottom: 16, flexShrink: 0 }}>
+          <p
+            className="text-[12.5px] leading-relaxed line-clamp-2"
+            style={{ color: 'var(--ink-soft)', margin: 0 }}
+          >
+            {template.description ?? ''}
+          </p>
+        </div>
+
+        {/* Meta — category · tag · slide count */}
+        <div className="mt-auto flex items-center gap-3">
           <span className="eyebrow">{template.category}</span>
           {template.tags?.[0] && (
             <>
-              <span className="w-0.5 h-0.5 rounded-full" style={{ background: 'var(--ink-faint)' }} />
-              <span className="font-serif-italic text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+              <span
+                className="w-0.5 h-0.5 rounded-full"
+                style={{ background: 'var(--ink-faint)', flexShrink: 0 }}
+              />
+              <span
+                className="font-serif-italic text-[12px]"
+                style={{ color: 'var(--ink-muted)' }}
+              >
                 {template.tags[0]}
               </span>
             </>
           )}
+          <span className="ml-auto eyebrow" style={{ flexShrink: 0 }}>
+            {template.total_slides}p
+          </span>
         </div>
       </div>
     </div>

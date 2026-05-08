@@ -13,7 +13,7 @@ export default {
         },
       },
       fontFamily: {
-        serif: ['Fraunces', 'Iowan Old Style', 'Georgia', 'serif'],
+        serif: ['"Playfair Display"', 'Georgia', 'serif'],
         sans:  ['Inter', 'system-ui', 'sans-serif'],
         mono:  ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },

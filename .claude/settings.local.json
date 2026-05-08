@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Start-Process -FilePath \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.4\\\\bin\\\\mysqld.exe\" -ArgumentList \"--datadir=C:\\\\mysql-data\", \"--port=3306\", \"--console\" -PassThru | Select-Object Id)",
+      "Bash(/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe *)",
+      "Bash(.venv/Scripts/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(npm run *)",
+      "Bash(.venv/Scripts/pip install *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(curl *)",
+      "Bash(/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe *')",
+      "Bash(/c/Users/wac.DESKTOP-MA8B12K/AppData/Local/Programs/Python/Python314/python.exe *)",
+      "Bash(net start *)",
+      "Bash(powershell \"Get-Service | Select-Object Name, DisplayName, Status\")",
+      "Read(//c/Program Files/MySQL//**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(powershell *)",
+      "Bash(npx tsc *)",
+      "Bash(git fetch *)",
+      "Bash(rm package-lock.json)",
+      "Bash(git checkout *)",
+      "Bash(pip install *)",
+      "Bash(git add *)"
+    ]
+  }
+}
