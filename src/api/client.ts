@@ -115,6 +115,7 @@ export const generationApi = {
     file?: File,
     url?: string,
     images?: File[],
+    level?: 'simple' | 'advanced',
   ) => {
     const form = new FormData()
     form.append('prompt', prompt)
@@ -124,6 +125,7 @@ export const generationApi = {
     if (images?.length) {
       for (const img of images) form.append('images', img)
     }
+    if (level) form.append('level', level)
     return api.post('/generate/sync', form)
   },
   /** Streaming generation. Returns the underlying Response so the caller can
@@ -134,6 +136,7 @@ export const generationApi = {
     file?: File,
     url?: string,
     images?: File[],
+    level?: 'simple' | 'advanced',
   ) => {
     const form = new FormData()
     form.append('prompt', prompt)
@@ -143,6 +146,7 @@ export const generationApi = {
     if (images?.length) {
       for (const img of images) form.append('images', img)
     }
+    if (level) form.append('level', level)
     const token = localStorage.getItem('access_token')
     return fetch(`${BASE_URL}/api/v1/generate/stream`, {
       method: 'POST',

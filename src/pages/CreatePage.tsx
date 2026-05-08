@@ -46,13 +46,14 @@ export function CreatePage() {
     file?: File,
     url?: string,
     images?: File[],
+    level?: 'simple' | 'advanced',
   ) => {
     setPhase('generating')
     setError(null)
     setStreamProgress({ step: 'Starting…', done: 0, total: slideCount, preview: [] })
 
     try {
-      const response = await generationApi.generateStream(prompt, slideCount, file, url, images)
+      const response = await generationApi.generateStream(prompt, slideCount, file, url, images, level)
       if (!response.ok || !response.body) {
         const text = await response.text().catch(() => '')
         throw new Error(text || `Stream failed (${response.status})`)
@@ -126,6 +127,7 @@ export function CreatePage() {
     style: string,
     slideCount: number,
     depth: ResearchDepth,
+    level: 'simple' | 'advanced' = 'simple',
   ) => {
     setPhase('generating')
     setError(null)
@@ -138,6 +140,7 @@ export function CreatePage() {
       form.append('style', style)
       form.append('slide_count', String(slideCount))
       form.append('depth', depth)
+      form.append('level', level)
 
       const token = localStorage.getItem('access_token')
       const response = await fetch(`${BASE_URL}/api/v1/generate/topic`, {

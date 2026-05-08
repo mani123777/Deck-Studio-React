@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Paperclip, Sparkles, X, Loader2, ArrowLeft, Mic, Square, Link2 } from 'lucide-react'
 
+export type DeckLevel = 'simple' | 'advanced'
+
 interface Props {
   onGenerate: (
     prompt: string,
@@ -9,6 +11,7 @@ interface Props {
     file?: File,
     url?: string,
     images?: File[],
+    level?: DeckLevel,
   ) => void
   isGenerating: boolean
 }
@@ -30,6 +33,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [images, setImages] = useState<File[]>([])
   const imagesRef = useRef<HTMLInputElement>(null)
+  const [level, setLevel] = useState<DeckLevel>('simple')
 
   const [urlOpen, setUrlOpen] = useState(false)
   const [urlValue, setUrlValue] = useState('')
@@ -140,6 +144,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
       file ?? undefined,
       urlAttached ?? undefined,
       images.length > 0 ? images : undefined,
+      level,
     )
   }
 
@@ -327,10 +332,10 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
 
             {/* Toolbar */}
             <div
-              className="flex items-center justify-between px-5 py-3"
+              className="flex items-center justify-between px-5 py-3 gap-3 flex-wrap"
               style={{ borderTop: '1px solid var(--line)', background: 'var(--surface-2)' }}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={isGenerating}
@@ -470,6 +475,27 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
                 )}
 
                 <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+
+                <div
+                  className="inline-flex items-center rounded-lg p-0.5"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
+                  title="Simple = text-driven slides. Advanced = adds charts, stats, timelines, process diagrams, and image placeholders."
+                >
+                  {(['simple', 'advanced'] as const).map((lv) => (
+                    <button
+                      key={lv}
+                      onClick={() => setLevel(lv)}
+                      disabled={isGenerating}
+                      className="text-[11.5px] font-semibold px-2.5 h-6 rounded-[5px] transition-colors capitalize"
+                      style={{
+                        background: level === lv ? 'var(--ink-strong)' : 'transparent',
+                        color: level === lv ? '#fff' : 'var(--ink-soft)',
+                      }}
+                    >
+                      {lv}
+                    </button>
+                  ))}
+                </div>
 
                 <div className="flex items-center gap-2">
                   <span className="eyebrow">Slides</span>

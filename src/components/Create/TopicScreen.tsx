@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Newspaper, Sparkles } from 'lucide-react'
 
 export type ResearchDepth = 'shallow' | 'standard' | 'deep'
+export type DeckLevel = 'simple' | 'advanced'
 
 interface Props {
   onGenerate: (
@@ -11,6 +12,7 @@ interface Props {
     style: string,
     slideCount: number,
     depth: ResearchDepth,
+    level: DeckLevel,
   ) => void
   isGenerating: boolean
 }
@@ -37,12 +39,13 @@ export function TopicScreen({ onGenerate, isGenerating }: Props) {
   const [style, setStyle] = useState('Professional')
   const [slideCount, setSlideCount] = useState(10)
   const [depth, setDepth] = useState<ResearchDepth>('standard')
+  const [level, setLevel] = useState<DeckLevel>('simple')
 
   const canSubmit = topic.trim().length > 1 && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onGenerate(topic.trim(), audience.trim(), style.toLowerCase(), slideCount, depth)
+    onGenerate(topic.trim(), audience.trim(), style.toLowerCase(), slideCount, depth, level)
   }
 
   return (
@@ -91,20 +94,49 @@ export function TopicScreen({ onGenerate, isGenerating }: Props) {
           >
             <div className="px-7 pt-7">
               <label className="block eyebrow mb-2" style={{ color: 'var(--ink-strong)' }}>Topic</label>
-              <div className="flex items-center gap-3">
+              <div
+                className="flex items-center gap-3 rounded-xl px-4 py-3 transition-colors"
+                style={{
+                  background: 'var(--paper-2)',
+                  border: '1px solid var(--line)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--ink-muted)')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+              >
                 <Newspaper size={18} style={{ color: 'var(--ink-muted)' }} />
                 <input
+                  autoFocus
                   type="text"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  placeholder="US Election 2026"
+                  placeholder="Type any topic — e.g. Kerala Flood, US Election 2026, AI in Healthcare"
                   disabled={isGenerating}
                   className="flex-1 outline-none text-[18px] font-serif"
                   style={{ background: 'transparent', color: 'var(--ink-strong)' }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit() }}
+                  onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = 'var(--ink-strong)')}
+                  onBlur={(e) => (e.currentTarget.parentElement!.style.borderColor = 'var(--line)')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSubmit()
+                    }
+                  }}
                 />
+                {topic && !isGenerating && (
+                  <button
+                    onClick={() => setTopic('')}
+                    aria-label="Clear topic"
+                    className="text-[12px] px-2 py-0.5 rounded-md transition-colors"
+                    style={{ color: 'var(--ink-muted)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--ink-strong)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ink-muted)')}
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px]" style={{ color: 'var(--ink-muted)' }}>Try:</span>
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
@@ -176,6 +208,29 @@ export function TopicScreen({ onGenerate, isGenerating }: Props) {
                       }}
                     >
                       {d.label}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+
+                <div
+                  className="flex items-center gap-1"
+                  title="Simple = text-driven slides. Advanced = adds charts, stats, timelines, process diagrams, and image placeholders."
+                >
+                  {(['simple', 'advanced'] as const).map((lv) => (
+                    <button
+                      key={lv}
+                      onClick={() => setLevel(lv)}
+                      disabled={isGenerating}
+                      className="text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors capitalize"
+                      style={{
+                        background: level === lv ? 'var(--ink-strong)' : 'transparent',
+                        color: level === lv ? '#fff' : 'var(--ink-soft)',
+                        border: '1px solid ' + (level === lv ? 'var(--ink-strong)' : 'var(--line)'),
+                      }}
+                    >
+                      {lv}
                     </button>
                   ))}
                 </div>
