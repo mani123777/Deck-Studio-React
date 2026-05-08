@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FolderKanban, Plus, Search, FileText, Sparkles, X } from 'lucide-react'
+import { FolderKanban, Plus, Search, FileText, Sparkles, X, MoreHorizontal } from 'lucide-react'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { Button } from '../components/ui/Button'
 import { useToast } from '../components/ui/Toast'
@@ -32,6 +32,21 @@ export function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this project? Documents and generated decks will be removed.')) return
+    try {
+      await projectsApi.delete(id)
+      setProjects((prev) => prev.filter((p) => p.id !== id))
+      setTotal((t) => Math.max(0, t - 1))
+      toast.success('Project deleted')
+    } catch (e: any) {
+      toast.error('Could not delete', e?.response?.data?.detail ?? e?.message ?? '')
+    } finally {
+      setOpenMenu(null)
+    }
+  }
 
   // Debounce search → trigger refetch
   useEffect(() => {
@@ -162,7 +177,15 @@ export function ProjectsPage() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {filtered.map((p) => (
-                <ProjectCard key={p.id} p={p} onOpen={() => navigate(`/projects/${p.id}`)} />
+                <ProjectCard
+                  key={p.id}
+                  p={p}
+                  menuOpen={openMenu === p.id}
+                  onToggleMenu={() => setOpenMenu(openMenu === p.id ? null : p.id)}
+                  onCloseMenu={() => setOpenMenu(null)}
+                  onOpen={() => navigate(`/projects/${p.id}`)}
+                  onDelete={() => handleDelete(p.id)}
+                />
               ))}
             </div>
             <div className="mt-8 flex items-center justify-center gap-4">
@@ -188,11 +211,25 @@ export function ProjectsPage() {
 
 // ── Card ─────────────────────────────────────────────────────────────────────
 
-function ProjectCard({ p, onOpen }: { p: ProjectListItem; onOpen: () => void }) {
+function ProjectCard({
+  p,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
+  onOpen,
+  onDelete,
+}: {
+  p: ProjectListItem
+  menuOpen: boolean
+  onToggleMenu: () => void
+  onCloseMenu: () => void
+  onOpen: () => void
+  onDelete: () => void
+}) {
   return (
-    <button
+    <div
       onClick={onOpen}
-      className="text-left rounded-2xl p-6 transition-all"
+      className="group relative text-left rounded-2xl p-6 transition-all cursor-pointer"
       style={{
         background: 'var(--paper-2)',
         border: '1px solid var(--line)',
@@ -207,6 +244,51 @@ function ProjectCard({ p, onOpen }: { p: ProjectListItem; onOpen: () => void }) 
         e.currentTarget.style.transform = 'translateY(0)'
       }}
     >
+      {/* Kebab menu — hover-reveal in the top-right corner */}
+      <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onToggleMenu}
+          className="w-8 h-8 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+          style={{ color: 'var(--ink-muted)', background: menuOpen ? 'rgba(10,9,7,0.06)' : 'transparent' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(10,9,7,0.06)'
+            e.currentTarget.style.color = 'var(--ink-strong)'
+          }}
+          onMouseLeave={(e) => {
+            if (!menuOpen) e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--ink-muted)'
+          }}
+          aria-label="Project options"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+        {menuOpen && (
+          <div
+            className="absolute right-0 top-9 rounded-xl py-1.5 w-40 shadow-lift"
+            style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
+          >
+            <button
+              onClick={() => { onOpen(); onCloseMenu() }}
+              className="w-full text-left px-3.5 py-2 text-[13px] transition-colors"
+              style={{ color: 'var(--ink)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              Open
+            </button>
+            <button
+              onClick={onDelete}
+              className="w-full text-left px-3.5 py-2 text-[13px] transition-colors"
+              style={{ color: 'var(--accent)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-soft)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-3 mb-4">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -214,7 +296,7 @@ function ProjectCard({ p, onOpen }: { p: ProjectListItem; onOpen: () => void }) 
         >
           <FolderKanban size={16} />
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pr-8">
           <p
             className="font-serif text-[18px] leading-tight tracking-tighter truncate"
             style={{ color: 'var(--ink-strong)' }}
@@ -269,7 +351,7 @@ function ProjectCard({ p, onOpen }: { p: ProjectListItem; onOpen: () => void }) 
           ))}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
