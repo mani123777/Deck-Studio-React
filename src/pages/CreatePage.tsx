@@ -1,20 +1,24 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Play, Save } from 'lucide-react'
-import { generationApi, presentationsApi } from '../api/client'
+import { generationApi, presentationsApi, BASE_URL } from '../api/client'
 import type { Slide, Theme, Block } from '../types'
 import { PromptScreen } from '../components/Create/PromptScreen'
+import { TopicScreen, type ResearchDepth } from '../components/Create/TopicScreen'
 import { OutlinePanel } from '../components/Create/OutlinePanel'
 import { BlockEditorPanel } from '../components/Create/BlockEditorPanel'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 
 type Phase = 'prompt' | 'generating' | 'editor'
+type CreateMode = 'prompt' | 'topic'
 
 interface StreamProgress {
   step: string
   done: number
   total: number
   preview: Slide[]
+  /** Optional secondary line, e.g. counts or recent source titles. */
+  detail?: string
 }
 
 // Fixed panel widths — canvas scale is stable regardless of block selection
@@ -34,6 +38,7 @@ export function CreatePage() {
   const [saving, setSaving]                 = useState(false)
   const [error, setError]                   = useState<string | null>(null)
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null)
+  const [mode, setMode]                     = useState<CreateMode>('prompt')
 
   const handleGenerate = async (
     prompt: string,
@@ -79,6 +84,112 @@ export function CreatePage() {
 
           if (evt === 'status') {
             setStreamProgress((prev) => prev ? { ...prev, step: data.message } : prev)
+          } else if (evt === 'theme') {
+            collectedTheme = data
+            setTheme(data)
+          } else if (evt === 'outline') {
+            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slides…' } : prev)
+          } else if (evt === 'slide') {
+            collected.push(data.slide)
+            setSlides([...collected])
+            setStreamProgress((prev) => prev ? {
+              ...prev,
+              done: data.index + 1,
+              total: data.total,
+              step: `Slide ${data.index + 1} of ${data.total}`,
+              preview: [...collected],
+            } : prev)
+          } else if (evt === 'error') {
+            throw new Error(data.message || 'Generation failed')
+          }
+        }
+      }
+
+      if (collected.length === 0 || !collectedTheme) {
+        throw new Error('Stream ended without producing any slides.')
+      }
+      setSelectedSlideIndex(0)
+      setSelectedBlockId(null)
+      setEditingBlockId(null)
+      setStreamProgress(null)
+      setPhase('editor')
+    } catch (e: any) {
+      setError(e?.message ?? e?.response?.data?.detail ?? 'Generation failed. Please try again.')
+      setStreamProgress(null)
+      setPhase('prompt')
+    }
+  }
+
+  const handleGenerateTopic = async (
+    topic: string,
+    audience: string,
+    style: string,
+    slideCount: number,
+    depth: ResearchDepth,
+  ) => {
+    setPhase('generating')
+    setError(null)
+    setStreamProgress({ step: 'Searching news…', done: 0, total: slideCount, preview: [] })
+
+    try {
+      const form = new FormData()
+      form.append('topic', topic)
+      form.append('audience', audience)
+      form.append('style', style)
+      form.append('slide_count', String(slideCount))
+      form.append('depth', depth)
+
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${BASE_URL}/api/v1/generate/topic`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      if (!response.ok || !response.body) {
+        const text = await response.text().catch(() => '')
+        throw new Error(text || `Stream failed (${response.status})`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const collected: Slide[] = []
+      let collectedTheme: Theme | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? ''
+
+        for (const raw of events) {
+          if (!raw.trim()) continue
+          const lines = raw.split('\n')
+          const eventLine = lines.find((l) => l.startsWith('event:'))
+          const dataLine = lines.find((l) => l.startsWith('data:'))
+          if (!eventLine || !dataLine) continue
+          const evt = eventLine.slice(6).trim()
+          const data = JSON.parse(dataLine.slice(5).trim())
+
+          if (evt === 'status') {
+            setStreamProgress((prev) => prev ? { ...prev, step: data.message } : prev)
+          } else if (evt === 'search_results') {
+            const titles = (data.sources ?? []).slice(0, 3).map((s: any) => s.source).join(' · ')
+            setStreamProgress((prev) => prev ? {
+              ...prev,
+              detail: `Found ${data.count} articles${titles ? ' · ' + titles : ''}`,
+            } : prev)
+          } else if (evt === 'extracted') {
+            setStreamProgress((prev) => prev ? {
+              ...prev,
+              detail: `Read ${data.succeeded} of ${data.requested} articles`,
+            } : prev)
+          } else if (evt === 'warning') {
+            // Surface but don't abort
+            console.warn('[topic-gen]', data.message)
+          } else if (evt === 'research') {
+            setStreamProgress((prev) => prev ? { ...prev, detail: 'Research synthesized' } : prev)
           } else if (evt === 'theme') {
             collectedTheme = data
             setTheme(data)
@@ -221,10 +332,47 @@ export function CreatePage() {
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0 }}>
                 {streamProgress.done} of {streamProgress.total} slides ready
               </p>
+              {streamProgress.detail && (
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '6px 0 0 0' }}>
+                  {streamProgress.detail}
+                </p>
+              )}
             </div>
           </div>
         )}
-        <PromptScreen onGenerate={handleGenerate} isGenerating={phase === 'generating'} />
+
+        {/* Mode toggle — hidden during generation */}
+        {phase === 'prompt' && (
+          <div
+            style={{
+              position: 'fixed', top: 14, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 25, display: 'flex', gap: 4,
+              background: 'var(--surface)', border: '1px solid var(--line)',
+              borderRadius: 999, padding: 3,
+            }}
+          >
+            {(['prompt', 'topic'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  padding: '6px 16px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  background: mode === m ? 'var(--ink-strong)' : 'transparent',
+                  color: mode === m ? '#fff' : 'var(--ink-soft)',
+                  border: 'none', cursor: 'pointer',
+                }}
+              >
+                {m === 'prompt' ? 'Prompt' : 'Current topic'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === 'prompt' ? (
+          <PromptScreen onGenerate={handleGenerate} isGenerating={phase === 'generating'} />
+        ) : (
+          <TopicScreen onGenerate={handleGenerateTopic} isGenerating={phase === 'generating'} />
+        )}
       </>
     )
   }
