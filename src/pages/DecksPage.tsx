@@ -52,7 +52,7 @@ export function DecksPage() {
     <AppLayout>
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
 
-      <div className="px-8 pt-12 pb-20">
+      <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
         <div className="flex items-end justify-between mb-10 flex-wrap gap-4">
           <div>
             <p className="eyebrow mb-3">— Workspace</p>
@@ -95,7 +95,7 @@ export function DecksPage() {
 
         {!loading && presentations.length === 0 && (
           <div
-            className="rounded-2xl py-20 text-center"
+            className="rounded-3xl px-12 py-16 text-center"
             style={{ background: 'var(--surface)', border: '1px dashed var(--line-strong)' }}
           >
             <p
