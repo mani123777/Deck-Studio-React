@@ -48,6 +48,10 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
   me: () => api.get('/auth/me'),
+  forgotPassword: (email: string) =>
+    api.post<{ message: string }>('/auth/forgot-password', { email }),
+  resetPassword: (token: string, new_password: string) =>
+    api.post<{ message: string }>('/auth/reset-password', { token, new_password }),
 }
 
 // Themes
@@ -105,14 +109,83 @@ export const generationApi = {
     return api.post('/generate', form)
   },
   status: (job_id: string) => api.get(`/generate/status/${job_id}`),
-  generateSync: (prompt: string, slideCount: number, file?: File, url?: string) => {
+  generateSync: (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+  ) => {
     const form = new FormData()
     form.append('prompt', prompt)
     form.append('slide_count', String(slideCount))
     if (file) form.append('file', file)
     if (url) form.append('url', url)
+    if (images?.length) {
+      for (const img of images) form.append('images', img)
+    }
     return api.post('/generate/sync', form)
   },
+  /** Streaming generation. Returns the underlying Response so the caller can
+   *  iterate the SSE event stream. */
+  generateStream: (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+  ) => {
+    const form = new FormData()
+    form.append('prompt', prompt)
+    form.append('slide_count', String(slideCount))
+    if (file) form.append('file', file)
+    if (url) form.append('url', url)
+    if (images?.length) {
+      for (const img of images) form.append('images', img)
+    }
+    const token = localStorage.getItem('access_token')
+    return fetch(`${BASE_URL}/api/v1/generate/stream`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+  },
+}
+
+// Image generation
+export const imagesApi = {
+  generate: (prompt: string, style?: string) =>
+    api.post<{ url: string; mime_type: string }>('/images/generate', {
+      prompt,
+      style: style ?? '',
+    }),
+  /** Resolve a relative `/generated/...` URL to a fully qualified one. */
+  resolveUrl: (url: string) =>
+    url.startsWith('http') ? url : `${BASE_URL}${url}`,
+}
+
+// Brand kit
+export const brandKitApi = {
+  get: () => api.get<import('../types').BrandKit>('/brand-kit'),
+  update: (payload: Partial<import('../types').BrandKit>) =>
+    api.put<import('../types').BrandKit>('/brand-kit', payload),
+}
+
+// Versions
+export const versionsApi = {
+  list: (presentation_id: string) =>
+    api.get<import('../types').PresentationVersion[]>(
+      `/presentations/${presentation_id}/versions`,
+    ),
+  create: (presentation_id: string, label: string = '') =>
+    api.post<import('../types').PresentationVersion>(
+      `/presentations/${presentation_id}/versions`,
+      { label },
+    ),
+  restore: (presentation_id: string, version_id: string) =>
+    api.post<import('../types').PresentationDetail>(
+      `/presentations/${presentation_id}/versions/${version_id}/restore`,
+    ),
 }
 
 // Presentations
