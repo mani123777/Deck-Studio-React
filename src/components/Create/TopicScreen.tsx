@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Newspaper, Sparkles } from 'lucide-react'
 
 export type ResearchDepth = 'shallow' | 'standard' | 'deep'
+export type DeckLevel = 'simple' | 'advanced'
 
 interface Props {
   onGenerate: (
@@ -11,6 +12,7 @@ interface Props {
     style: string,
     slideCount: number,
     depth: ResearchDepth,
+    level: DeckLevel,
   ) => void
   isGenerating: boolean
 }
@@ -37,12 +39,13 @@ export function TopicScreen({ onGenerate, isGenerating }: Props) {
   const [style, setStyle] = useState('Professional')
   const [slideCount, setSlideCount] = useState(10)
   const [depth, setDepth] = useState<ResearchDepth>('standard')
+  const [level, setLevel] = useState<DeckLevel>('simple')
 
   const canSubmit = topic.trim().length > 1 && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onGenerate(topic.trim(), audience.trim(), style.toLowerCase(), slideCount, depth)
+    onGenerate(topic.trim(), audience.trim(), style.toLowerCase(), slideCount, depth, level)
   }
 
   return (
@@ -205,6 +208,29 @@ export function TopicScreen({ onGenerate, isGenerating }: Props) {
                       }}
                     >
                       {d.label}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="w-px h-4" style={{ background: 'var(--line)' }} />
+
+                <div
+                  className="flex items-center gap-1"
+                  title="Simple = text-driven slides. Advanced = adds charts, stats, timelines, process diagrams, and image placeholders."
+                >
+                  {(['simple', 'advanced'] as const).map((lv) => (
+                    <button
+                      key={lv}
+                      onClick={() => setLevel(lv)}
+                      disabled={isGenerating}
+                      className="text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors capitalize"
+                      style={{
+                        background: level === lv ? 'var(--ink-strong)' : 'transparent',
+                        color: level === lv ? '#fff' : 'var(--ink-soft)',
+                        border: '1px solid ' + (level === lv ? 'var(--ink-strong)' : 'var(--line)'),
+                      }}
+                    >
+                      {lv}
                     </button>
                   ))}
                 </div>
