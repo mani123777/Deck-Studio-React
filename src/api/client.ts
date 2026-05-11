@@ -202,6 +202,7 @@ export const presentationsApi = {
     slides: object[]
     theme_id: string
     template_id?: string
+    token_count?: number
   }) => api.post('/presentations', payload),
   update: (id: string, payload: object) => api.patch(`/presentations/${id}`, payload),
   delete: (id: string) => api.delete(`/presentations/${id}`),

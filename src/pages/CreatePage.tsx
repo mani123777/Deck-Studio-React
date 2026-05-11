@@ -39,6 +39,7 @@ export function CreatePage() {
   const [error, setError]                   = useState<string | null>(null)
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null)
   const [mode, setMode]                     = useState<CreateMode>('prompt')
+  const [generatedTokenCount, setGeneratedTokenCount] = useState<number | null>(null)
 
   const handleGenerate = async (
     prompt: string,
@@ -50,6 +51,7 @@ export function CreatePage() {
   ) => {
     setPhase('generating')
     setError(null)
+    setGeneratedTokenCount(null)
     setStreamProgress({ step: 'Starting…', done: 0, total: slideCount, preview: [] })
 
     try {
@@ -64,6 +66,7 @@ export function CreatePage() {
       let buffer = ''
       const collected: Slide[] = []
       let collectedTheme: Theme | null = null
+      let tokenCount: number | null = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -102,6 +105,8 @@ export function CreatePage() {
             } : prev)
           } else if (evt === 'error') {
             throw new Error(data.message || 'Generation failed')
+          } else if (evt === 'complete') {
+            tokenCount = typeof data.token_count === 'number' ? data.token_count : null
           }
         }
       }
@@ -112,6 +117,7 @@ export function CreatePage() {
       setSelectedSlideIndex(0)
       setSelectedBlockId(null)
       setEditingBlockId(null)
+      setGeneratedTokenCount(tokenCount)
       setStreamProgress(null)
       setPhase('editor')
     } catch (e: any) {
@@ -131,6 +137,7 @@ export function CreatePage() {
   ) => {
     setPhase('generating')
     setError(null)
+    setGeneratedTokenCount(null)
     setStreamProgress({ step: 'Searching news…', done: 0, total: slideCount, preview: [] })
 
     try {
@@ -158,6 +165,7 @@ export function CreatePage() {
       let buffer = ''
       const collected: Slide[] = []
       let collectedTheme: Theme | null = null
+      let tokenCount: number | null = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -210,6 +218,8 @@ export function CreatePage() {
             } : prev)
           } else if (evt === 'error') {
             throw new Error(data.message || 'Generation failed')
+          } else if (evt === 'complete') {
+            tokenCount = typeof data.token_count === 'number' ? data.token_count : null
           }
         }
       }
@@ -220,6 +230,7 @@ export function CreatePage() {
       setSelectedSlideIndex(0)
       setSelectedBlockId(null)
       setEditingBlockId(null)
+      setGeneratedTokenCount(tokenCount)
       setStreamProgress(null)
       setPhase('editor')
     } catch (e: any) {
@@ -290,7 +301,12 @@ export function CreatePage() {
     try {
       const titleBlock = slides[0]?.blocks.find((b) => b.type === 'title' || b.type === 'heading')
       const title = titleBlock?.content?.split('\n')[0] || 'My Presentation'
-      const res = await presentationsApi.create({ title, slides: slides as object[], theme_id: theme.id })
+      const res = await presentationsApi.create({
+        title,
+        slides: slides as object[],
+        theme_id: theme.id,
+        token_count: generatedTokenCount ?? undefined,
+      })
       navigate(`/presentations/${res.data.id}`)
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Save failed. Please try again.')
