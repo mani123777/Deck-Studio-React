@@ -172,6 +172,7 @@ export interface PresentationListItem {
   template_name: string
   theme_id: string
   total_slides: number
+  token_count: number
   created_at: string
   updated_at: string
   preview_slide?: Slide | null
@@ -186,6 +187,7 @@ export interface PresentationDetail {
   template_id: string
   theme_id: string
   is_preview: boolean
+  token_count: number
   created_at: string
   updated_at: string
   layouts?: DeckLayout[]
@@ -223,11 +225,13 @@ export type ExportFormat = 'html' | 'pptx' | 'pdf'
 export interface PreviewResponse {
   slides: Slide[]
   theme: Theme
+  token_count?: number
 }
 
 export interface SyncGenerateResponse {
   slides: Slide[]
   theme: Theme
+  token_count?: number
 }
 
 export interface CreatePresentationRequest {
@@ -237,6 +241,7 @@ export interface CreatePresentationRequest {
   theme_id: string
   template_id?: string
   logo_url?: string
+  token_count?: number
 }
 
 export interface CreatePresentationResponse {

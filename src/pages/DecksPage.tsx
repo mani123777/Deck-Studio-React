@@ -23,6 +23,13 @@ function timeAgo(dateStr: string) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function formatTokenCount(count?: number) {
+  const safe = Math.max(0, Number(count || 0))
+  if (safe >= 1_000_000) return `${(safe / 1_000_000).toFixed(safe >= 10_000_000 ? 0 : 1)}M`
+  if (safe >= 1_000) return `${(safe / 1_000).toFixed(safe >= 10_000 ? 0 : 1)}K`
+  return safe.toLocaleString()
+}
+
 export function DecksPage() {
   const navigate = useNavigate()
   const [presentations, setPresentations] = useState<PresentationListItem[]>([])
@@ -236,6 +243,18 @@ function DeckCard({
                 <span className="eyebrow">{p.total_slides}p</span>
               </>
             )}
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold leading-none"
+              style={{
+                background: 'rgba(245, 158, 11, 0.14)',
+                color: '#92400e',
+                border: '1px solid rgba(245, 158, 11, 0.32)',
+              }}
+              title={`${(p.token_count || 0).toLocaleString()} tokens used`}
+            >
+              <span style={{ color: '#b45309', fontWeight: 800 }}>{formatTokenCount(p.token_count)}</span>
+              <span className="uppercase tracking-[0.08em]">tokens</span>
+            </span>
           </div>
         </button>
 
