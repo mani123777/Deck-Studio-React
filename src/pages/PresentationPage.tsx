@@ -9,6 +9,7 @@ import { EditorToolbar } from '../components/Presentation/EditorToolbar'
 import { ChartModal } from '../components/Presentation/ChartModal'
 import { AddSlideMenu, type SlideTemplateKind } from '../components/Presentation/AddSlideMenu'
 import { NotesPanel } from '../components/Presentation/NotesPanel'
+import { SlideRewritePanel } from '../components/Presentation/SlideRewritePanel'
 import { VersionHistoryPanel } from '../components/Presentation/VersionHistoryPanel'
 import {
   LayoutsPanel,
@@ -17,6 +18,7 @@ import {
 } from '../components/Presentation/LayoutsPanel'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
+import { useSlideHistory } from '../hooks/useSlideHistory'
 import type {
   Block, ChartDataPoint, ChartType, DeckLayout,
   PresentationDetail, Position, Slide, Styling, Theme,
@@ -185,7 +187,9 @@ export function PresentationPage() {
   const navigate = useNavigate()
 
   const [presentation, setPresentation] = useState<PresentationDetail | null>(null)
-  const [slides, setSlides]             = useState<Slide[]>([])
+  const history = useSlideHistory([])
+  const slides = history.slides
+  const setSlides = history.setSlides
   const [activeSlide, setActiveSlide]   = useState(0)
 
   const [themeOpen, setThemeOpen]       = useState(false)
@@ -210,6 +214,8 @@ export function PresentationPage() {
   const [layouts, setLayouts]           = useState<DeckLayout[]>([])
   const [aiImageOpen, setAiImageOpen]   = useState(false)
   const [aiImageBlockId, setAiImageBlockId] = useState<string | null>(null)
+  const [rewriteOpen, setRewriteOpen]   = useState(false)
+  const [rewriteBusy, setRewriteBusy]   = useState(false)
 
   // Chart insert / edit modal
   const [chartModalOpen, setChartModalOpen]   = useState(false)
@@ -255,14 +261,14 @@ export function PresentationPage() {
     if (!id) return
     presentationsApi.get(id).then(async (r) => {
       setPresentation(r.data)
-      setSlides(r.data.slides)
+      history.resetTo(r.data.slides)
       setLayouts((r.data as any).layouts ?? [])
 
       const savedPreset = localStorage.getItem(`theme_preset_${id}`)
       if (savedPreset) {
         const preset = getThemeById(savedPreset)
         setActiveTheme(preset)
-        setSlides(applyPresetToSlides(r.data.slides, preset))
+        history.resetTo(applyPresetToSlides(r.data.slides, preset))
         setDbTheme(presetToTheme(preset))
       } else if (r.data.theme_id) {
         // Fetch the actual DB theme for canvas/fallback rendering.
@@ -354,11 +360,13 @@ export function PresentationPage() {
           ...s,
           blocks: s.blocks.map((b) => b.id === blockId ? { ...b, content } : b),
         }
-      )
+      ),
+      { mergeKey: `content:${activeSlide}:${blockId}` },
     )
-  }, [activeSlide])
+  }, [activeSlide, setSlides])
 
   const updateStyling = (blockId: string, updates: Partial<Styling>) => {
+    const mergeKey = `styling:${activeSlide}:${blockId}:${Object.keys(updates).sort().join(',')}`
     setSlides((prev) =>
       prev.map((s, i) =>
         i !== activeSlide ? s : {
@@ -367,7 +375,8 @@ export function PresentationPage() {
             b.id === blockId ? { ...b, styling: { ...b.styling, ...updates } } : b
           ),
         }
-      )
+      ),
+      { mergeKey },
     )
   }
 
@@ -378,7 +387,8 @@ export function PresentationPage() {
           ...s,
           blocks: s.blocks.map((b) => b.id === blockId ? { ...b, content } : b),
         }
-      )
+      ),
+      { mergeKey: `content:${activeSlide}:${blockId}` },
     )
   }
 
@@ -457,10 +467,21 @@ export function PresentationPage() {
   // ── Version restore ─────────────────────────────────────────────────────────
   const handleVersionRestored = (detail: PresentationDetail) => {
     setPresentation(detail)
-    setSlides(detail.slides)
+    history.resetTo(detail.slides)
     setLayouts((detail as any).layouts ?? [])
     setActiveSlide(0)
     setSelectedBlockId(null)
+  }
+
+  // ── Slide rewrite ───────────────────────────────────────────────────────────
+  const handleSlideRewrite = (newSlide: Slide, _note: string) => {
+    // Pin the rewritten slide into the current index; preserves order.
+    setSlides((prev) =>
+      prev.map((s, i) => i === activeSlide ? { ...newSlide, order: s.order } : s)
+    )
+    // Keep panel open so users can iterate, but bounce out of any block edit.
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
   }
 
   // ── AI image generation ─────────────────────────────────────────────────────
@@ -577,9 +598,10 @@ export function PresentationPage() {
       prev.map((s, i) => i !== activeSlide ? s : {
         ...s,
         blocks: s.blocks.map((b) => b.id === blockId ? { ...b, position: next } : b),
-      })
+      }),
+      { mergeKey: `position:${activeSlide}:${blockId}` },
     )
-  }, [activeSlide])
+  }, [activeSlide, setSlides])
 
   const duplicateSlide = (index: number) => {
     const src = slides[index]
@@ -762,6 +784,20 @@ export function PresentationPage() {
             </span>
           )}
         </div>
+
+        {/* Undo / Redo — pinned in the top bar so they never overlap the canvas toolbar */}
+        <TopBarIconBtn
+          label="↶"
+          title="Undo (Ctrl+Z)"
+          disabled={!history.canUndo}
+          onClick={history.undo}
+        />
+        <TopBarIconBtn
+          label="↷"
+          title="Redo (Ctrl+Shift+Z)"
+          disabled={!history.canRedo}
+          onClick={history.redo}
+        />
 
         <TBtn label="Theme" active={themeOpen} onClick={() => setThemeOpen((o) => !o)} />
         <TBtn label="AI" active={chatOpen} onClick={() => setChatOpen((o) => !o)} />
@@ -1032,11 +1068,19 @@ export function PresentationPage() {
             />
           </div>
 
-          {/* P1: secondary toolbar — notes / layouts / history / AI image */}
+          {/* P1: secondary toolbar — rewrite, notes / layouts / history / AI image
+              (Undo/Redo live in the top app bar so they never overlap the canvas toolbar.) */}
           <div style={{
             position: 'absolute', top: 14, right: 24, zIndex: 30,
-            display: 'flex', gap: 8,
+            display: 'flex', gap: 8, alignItems: 'center',
           }}>
+            {currentSlide && (
+              <SecondaryBtn
+                label="Rewrite"
+                active={rewriteOpen}
+                onClick={() => setRewriteOpen((v) => !v)}
+              />
+            )}
             <SecondaryBtn
               label="Notes"
               active={notesOpen}
@@ -1207,6 +1251,15 @@ export function PresentationPage() {
         />
       )}
 
+      {/* AI slide rewrite panel */}
+      {rewriteOpen && currentSlide && (
+        <SlideRewritePanel
+          slide={currentSlide}
+          onClose={() => setRewriteOpen(false)}
+          onApply={handleSlideRewrite}
+        />
+      )}
+
       {/* AI image generation modal */}
       {aiImageOpen && (
         <AiImageModal
@@ -1302,22 +1355,99 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
   onExit: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const presenterMainRef = useRef<HTMLDivElement>(null)
+  const presenterNextRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
+  const [presenterScale, setPresenterScale] = useState(0.5)
+  const [presenterNextScale, setPresenterNextScale] = useState(0.18)
+
+  // Presenter-view state ------------------------------------------------------
+  const [presenterView, setPresenterView] = useState(false)
+  // Slide timer: tracks time on the CURRENT slide. Resets when `current` changes.
+  const [slideElapsed, setSlideElapsed] = useState(0)
+  // Total elapsed since entering present mode (real-time stopwatch).
+  const [totalElapsed, setTotalElapsed] = useState(0)
+  // Wall clock for the presenter view.
+  const [now, setNow] = useState(() => new Date())
+
+  // Reset slide-time when navigating between slides.
+  useEffect(() => { setSlideElapsed(0) }, [current])
+
+  // Single 1Hz tick drives all three counters.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSlideElapsed((s) => s + 1)
+      setTotalElapsed((s) => s + 1)
+      setNow(new Date())
+    }, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Keyboard nav — arrows, space, P toggle, Esc.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault()
+        onChangeCurrent(Math.min(current + 1, slides.length - 1))
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault()
+        onChangeCurrent(Math.max(current - 1, 0))
+      } else if (e.key === 'Escape') {
+        onExit()
+      } else if (e.key === 'p' || e.key === 'P') {
+        setPresenterView((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [current, slides.length, onChangeCurrent, onExit])
 
   useEffect(() => {
     const compute = () => {
-      if (!containerRef.current) return
-      const { clientWidth, clientHeight } = containerRef.current
-      setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
+      if (containerRef.current) {
+        const { clientWidth, clientHeight } = containerRef.current
+        setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
+      }
+      if (presenterMainRef.current) {
+        const { clientWidth, clientHeight } = presenterMainRef.current
+        setPresenterScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H) * 0.95)
+      }
+      if (presenterNextRef.current) {
+        const { clientWidth, clientHeight } = presenterNextRef.current
+        setPresenterNextScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H) * 0.92)
+      }
     }
     compute()
     window.addEventListener('resize', compute)
     return () => window.removeEventListener('resize', compute)
-  }, [])
+  }, [presenterView])
 
   const slide = slides[current]
+  const nextSlide = slides[current + 1] ?? null
   const isFirst = current === 0
   const isLast  = current === slides.length - 1
+
+  if (presenterView) {
+    return (
+      <PresenterView
+        slides={slides}
+        theme={theme}
+        current={current}
+        slide={slide}
+        nextSlide={nextSlide}
+        slideElapsed={slideElapsed}
+        totalElapsed={totalElapsed}
+        now={now}
+        mainRef={presenterMainRef}
+        nextRef={presenterNextRef}
+        mainScale={presenterScale}
+        nextScale={presenterNextScale}
+        onChangeCurrent={onChangeCurrent}
+        onExit={onExit}
+        onToggleView={() => setPresenterView(false)}
+      />
+    )
+  }
 
   return (
     <div
@@ -1380,18 +1510,31 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
           <NavBtn label="→" disabled={isLast} onClick={() => onChangeCurrent(current + 1)} />
         </div>
 
-        {/* Exit */}
-        <button
-          onClick={onExit}
-          style={{
-            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-            color: 'rgba(255,255,255,0.6)', borderRadius: 7,
-            padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            minWidth: 60,
-          }}
-        >
-          ✕ Exit
-        </button>
+        {/* View toggle + Exit */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={() => setPresenterView(true)}
+            title="Presenter view (P)"
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.7)', borderRadius: 7,
+              padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Presenter
+          </button>
+          <button
+            onClick={onExit}
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.6)', borderRadius: 7,
+              padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              minWidth: 60,
+            }}
+          >
+            ✕ Exit
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1415,6 +1558,35 @@ function NavBtn({ label, disabled, onClick }: { label: string; disabled: boolean
 }
 
 // ── Secondary toolbar button (P1 panels) ────────────────────────────────────
+
+function TopBarIconBtn({
+  label, title, onClick, disabled,
+}: { label: string; title?: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{
+        width: 36, height: 36, borderRadius: 999,
+        background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+        border: '1px solid ' + (disabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.10)'),
+        color: disabled ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.85)',
+        fontSize: 16, fontWeight: 700,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)'
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'
+      }}
+    >{label}</button>
+  )
+}
 
 function SecondaryBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -1511,4 +1683,203 @@ function AiImageModal({
       </div>
     </div>
   )
+}
+
+// ── Presenter view ──────────────────────────────────────────────────────────
+
+function PresenterView({
+  slides, theme, current, slide, nextSlide,
+  slideElapsed, totalElapsed, now,
+  mainRef, nextRef, mainScale, nextScale,
+  onChangeCurrent, onExit, onToggleView,
+}: {
+  slides: Slide[]
+  theme: Theme
+  current: number
+  slide: Slide
+  nextSlide: Slide | null
+  slideElapsed: number
+  totalElapsed: number
+  now: Date
+  mainRef: React.RefObject<HTMLDivElement>
+  nextRef: React.RefObject<HTMLDivElement>
+  mainScale: number
+  nextScale: number
+  onChangeCurrent: (i: number) => void
+  onExit: () => void
+  onToggleView: () => void
+}) {
+  const notes = (slide?.notes ?? '').trim()
+  const clock = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const isLast = current === slides.length - 1
+  const isFirst = current === 0
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: '#0a0a14',
+        display: 'grid',
+        gridTemplateColumns: '1fr 380px',
+        gridTemplateRows: '1fr auto',
+        color: '#fff',
+        fontFamily: 'Inter, sans-serif',
+      }}
+    >
+      {/* Main slide preview (occupies left column, full height) */}
+      <div
+        ref={mainRef}
+        onClick={() => onChangeCurrent(Math.min(current + 1, slides.length - 1))}
+        style={{
+          gridColumn: 1, gridRow: 1,
+          padding: 24,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
+          cursor: isLast ? 'default' : 'pointer',
+        }}
+      >
+        {slide && <SlidePreview slide={slide} theme={theme} scale={mainScale} />}
+      </div>
+
+      {/* Right column: next-up + notes */}
+      <div
+        style={{
+          gridColumn: 2, gridRow: 1,
+          padding: 20,
+          display: 'flex', flexDirection: 'column', gap: 16,
+          borderLeft: '1px solid rgba(255,255,255,0.06)',
+          background: '#0e0e1a',
+          overflow: 'hidden',
+        }}
+      >
+        <div>
+          <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: '0 0 6px 0', fontWeight: 600 }}>
+            Next up
+          </p>
+          <div
+            ref={nextRef}
+            style={{
+              aspectRatio: '16 / 9',
+              width: '100%',
+              background: '#000',
+              borderRadius: 8,
+              overflow: 'hidden',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            {nextSlide
+              ? <SlidePreview slide={nextSlide} theme={theme} scale={nextScale} />
+              : <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>End of deck</span>
+            }
+          </div>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', margin: '8px 0 0 0' }}>
+            {nextSlide ? `Slide ${current + 2} of ${slides.length}` : 'Last slide'}
+          </p>
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: '0 0 6px 0', fontWeight: 600 }}>
+            Speaker notes
+          </p>
+          <div
+            style={{
+              flex: 1, overflowY: 'auto',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: 8,
+              padding: 14,
+              fontSize: 13.5,
+              lineHeight: 1.6,
+              color: 'rgba(255,255,255,0.82)',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {notes || <span style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>No notes for this slide.</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom bar — clock, timers, nav, exit */}
+      <div
+        style={{
+          gridColumn: '1 / span 2', gridRow: 2,
+          height: 64,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(12px)',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          padding: '0 24px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          alignItems: 'center',
+        }}
+      >
+        {/* Left — clocks */}
+        <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+          <Clock label="Slide" value={formatTime(slideElapsed)} accent />
+          <Clock label="Total" value={formatTime(totalElapsed)} />
+          <Clock label="Clock" value={clock} />
+        </div>
+
+        {/* Center — nav */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
+          <NavBtn label="←" disabled={isFirst} onClick={() => onChangeCurrent(current - 1)} />
+          <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, minWidth: 60, textAlign: 'center' }}>
+            {current + 1} / {slides.length}
+          </span>
+          <NavBtn label="→" disabled={isLast} onClick={() => onChangeCurrent(current + 1)} />
+        </div>
+
+        {/* Right — view toggle + exit */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button
+            onClick={onToggleView}
+            title="Audience view (P)"
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.7)', borderRadius: 7,
+              padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Audience view
+          </button>
+          <button
+            onClick={onExit}
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.6)', borderRadius: 7,
+              padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            ✕ Exit
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Clock({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <p style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: 0, fontWeight: 600 }}>
+        {label}
+      </p>
+      <p style={{
+        fontSize: 18, fontWeight: 600, margin: '2px 0 0 0',
+        color: accent ? '#a5b4fc' : '#fff',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function formatTime(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
 }
