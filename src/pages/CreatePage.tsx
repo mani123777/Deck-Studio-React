@@ -9,7 +9,7 @@ import { OutlinePanel } from '../components/Create/OutlinePanel'
 import { OutlineReviewScreen, type OutlineSlide } from '../components/Create/OutlineReviewScreen'
 import { BlockEditorPanel } from '../components/Create/BlockEditorPanel'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
-import { getThemeById, type ThemePreset } from '../data/themes'
+import { getThemeById } from '../data/themes'
 import { applyPresetToSlides, presetToTheme } from '../utils/themePreset'
 
 type Phase = 'prompt' | 'outline-review' | 'generating' | 'editor'
@@ -349,7 +349,7 @@ export function CreatePage() {
       // prefer the value passed directly into this call (presetIdOverride)
       // over the state, since state updates from handleGenerate are async
       // and the closure here would see the stale default otherwise.
-      const effectivePresetId = presetIdOverride ?? chosenPresetId
+      const effectivePresetId = chosenPresetId
       const preset = getThemeById(effectivePresetId)
       if (preset && preset.id !== 'vortex') {
         const restyled = applyPresetToSlides(collected, preset)
