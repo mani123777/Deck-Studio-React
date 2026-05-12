@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Play, Save } from 'lucide-react'
 import { generationApi, presentationsApi, BASE_URL } from '../api/client'
@@ -24,7 +24,7 @@ interface StreamProgress {
   detail?: string
 }
 
-// Fixed panel widths â€” canvas scale is stable regardless of block selection
+// Fixed panel widths — canvas scale is stable regardless of block selection
 const LEFT_W  = 192  // slide thumbnail strip
 const RIGHT_W = 264  // property panel
 const CANVAS_PAD = 56
@@ -44,7 +44,7 @@ export function CreatePage() {
   const [mode, setMode]                     = useState<CreateMode>('prompt')
   const [generatedTokenCount, setGeneratedTokenCount] = useState<number | null>(null)
 
-  // Outline-review flow state â€” preserved between phases so user can go back.
+  // Outline-review flow state — preserved between phases so user can go back.
   const [pendingPrompt, setPendingPrompt] = useState<{
     prompt: string
     slideCount: number
@@ -74,7 +74,7 @@ export function CreatePage() {
     if (reviewOutline) {
       setError(null)
       setPhase('generating')
-      setStreamProgress({ step: 'Building outlineâ€¦', done: 0, total: slideCount, preview: [] })
+      setStreamProgress({ step: 'Building outline…', done: 0, total: slideCount, preview: [] })
       try {
         const res = await generationApi.generateOutline(
           prompt, slideCount, file, url, images, normalizedLevel,
@@ -110,7 +110,7 @@ export function CreatePage() {
     setPhase('generating')
     setError(null)
     setGeneratedTokenCount(null)
-    setStreamProgress({ step: 'Startingâ€¦', done: 0, total: slideCount, preview: [] })
+    setStreamProgress({ step: 'Starting…', done: 0, total: slideCount, preview: [] })
 
     try {
       const response = await generationApi.generateStream(prompt, slideCount, file, url, images, level, outline)
@@ -150,7 +150,7 @@ export function CreatePage() {
             collectedTheme = data
             setTheme(data)
           } else if (evt === 'outline') {
-            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slidesâ€¦' } : prev)
+            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slides…' } : prev)
           } else if (evt === 'slide') {
             collected.push(data.slide)
             setSlides([...collected])
@@ -183,7 +183,7 @@ export function CreatePage() {
         throw new Error('Stream ended without producing any slides. Try again, or simplify the prompt.')
       }
       if (!collectedTheme) {
-        // We got slides but no theme â€” fall back to the default Vortex preset.
+        // We got slides but no theme — fall back to the default Vortex preset.
         const fallbackTheme = presetToTheme(getThemeById('vortex'))
         collectedTheme = fallbackTheme
         setTheme(fallbackTheme)
@@ -239,7 +239,7 @@ export function CreatePage() {
     setPhase('generating')
     setError(null)
     setGeneratedTokenCount(null)
-    setStreamProgress({ step: 'Searching newsâ€¦', done: 0, total: slideCount, preview: [] })
+    setStreamProgress({ step: 'Searching news…', done: 0, total: slideCount, preview: [] })
 
     try {
       const form = new FormData()
@@ -287,10 +287,10 @@ export function CreatePage() {
           if (evt === 'status') {
             setStreamProgress((prev) => prev ? { ...prev, step: data.message } : prev)
           } else if (evt === 'search_results') {
-            const titles = (data.sources ?? []).slice(0, 3).map((s: any) => s.source).join(' Â· ')
+            const titles = (data.sources ?? []).slice(0, 3).map((s: any) => s.source).join(' · ')
             setStreamProgress((prev) => prev ? {
               ...prev,
-              detail: `Found ${data.count} articles${titles ? ' Â· ' + titles : ''}`,
+              detail: `Found ${data.count} articles${titles ? ' · ' + titles : ''}`,
             } : prev)
           } else if (evt === 'extracted') {
             setStreamProgress((prev) => prev ? {
@@ -306,7 +306,7 @@ export function CreatePage() {
             collectedTheme = data
             setTheme(data)
           } else if (evt === 'outline') {
-            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slidesâ€¦' } : prev)
+            setStreamProgress((prev) => prev ? { ...prev, total: data.slide_count, step: 'Drafting slides…' } : prev)
           } else if (evt === 'slide') {
             collected.push(data.slide)
             setSlides([...collected])
@@ -339,7 +339,7 @@ export function CreatePage() {
         throw new Error('Stream ended without producing any slides. Try again, or simplify the prompt.')
       }
       if (!collectedTheme) {
-        // We got slides but no theme â€” fall back to the default Vortex preset.
+        // We got slides but no theme — fall back to the default Vortex preset.
         const fallbackTheme = presetToTheme(getThemeById('vortex'))
         collectedTheme = fallbackTheme
         setTheme(fallbackTheme)
@@ -515,7 +515,7 @@ export function CreatePage() {
           </div>
         )}
 
-        {/* Mode toggle â€” hidden during generation */}
+        {/* Mode toggle — hidden during generation */}
         {phase === 'prompt' && (
           <div
             style={{
@@ -559,14 +559,14 @@ export function CreatePage() {
   const presentationTitle =
     slides[0]?.blocks.find((b) => b.type === 'title' || b.type === 'heading')?.content?.split('\n')[0] || 'Untitled'
 
-  // Fixed scale â€” doesn't jump when panel opens/closes
+  // Fixed scale — doesn't jump when panel opens/closes
   const availableW = window.innerWidth - LEFT_W - RIGHT_W - CANVAS_PAD
   const previewScale = Math.min(Math.max(availableW / 1280, 0.35), 0.88)
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: '#0b1120' }}>
 
-      {/* â”€â”€ TOP BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── TOP BAR ─────────────────────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between px-5 flex-shrink-0"
         style={{ height: 52, borderBottom: '1px solid rgba(255,255,255,0.07)', background: '#0d1526' }}
@@ -607,15 +607,15 @@ export function CreatePage() {
             style={{ background: saving ? '#4338ca' : 'linear-gradient(135deg, #6366f1, #4f46e5)' }}
           >
             <Save size={13} />
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
 
-      {/* â”€â”€ MAIN 3-COLUMN AREA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── MAIN 3-COLUMN AREA ──────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT â€” Slide strip */}
+        {/* LEFT — Slide strip */}
         <div
           className="flex-shrink-0 flex flex-col overflow-hidden"
           style={{ width: LEFT_W, borderRight: '1px solid rgba(255,255,255,0.07)', background: '#0d1526' }}
@@ -632,7 +632,7 @@ export function CreatePage() {
           />
         </div>
 
-        {/* CENTER â€” Canvas */}
+        {/* CENTER — Canvas */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Canvas area */}
           <div
@@ -698,7 +698,7 @@ export function CreatePage() {
           </div>
         </div>
 
-        {/* RIGHT â€” Property panel */}
+        {/* RIGHT — Property panel */}
         <div className="flex-shrink-0 flex flex-col overflow-hidden">
           <BlockEditorPanel
             block={selectedBlock}
