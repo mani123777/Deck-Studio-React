@@ -6,10 +6,13 @@ import type { Slide, Theme, Block } from '../types'
 import { PromptScreen } from '../components/Create/PromptScreen'
 import { TopicScreen, type ResearchDepth } from '../components/Create/TopicScreen'
 import { OutlinePanel } from '../components/Create/OutlinePanel'
+import { OutlineReviewScreen, type OutlineSlide } from '../components/Create/OutlineReviewScreen'
 import { BlockEditorPanel } from '../components/Create/BlockEditorPanel'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
+import { getThemeById, type ThemePreset } from '../data/themes'
+import { applyPresetToSlides, presetToTheme } from '../utils/themePreset'
 
-type Phase = 'prompt' | 'generating' | 'editor'
+type Phase = 'prompt' | 'outline-review' | 'generating' | 'editor'
 type CreateMode = 'prompt' | 'topic'
 
 interface StreamProgress {
@@ -41,6 +44,19 @@ export function CreatePage() {
   const [mode, setMode]                     = useState<CreateMode>('prompt')
   const [generatedTokenCount, setGeneratedTokenCount] = useState<number | null>(null)
 
+  // Outline-review flow state — preserved between phases so user can go back.
+  const [pendingPrompt, setPendingPrompt] = useState<{
+    prompt: string
+    slideCount: number
+    file?: File
+    url?: string
+    images?: File[]
+    level: 'simple' | 'advanced'
+  } | null>(null)
+  const [outlineSlides, setOutlineSlides] = useState<OutlineSlide[]>([])
+  const [outlineDeckTitle, setOutlineDeckTitle] = useState('')
+  const [chosenPresetId, setChosenPresetId] = useState<string>('vortex')
+
   const handleGenerate = async (
     prompt: string,
     slideCount: number,
@@ -48,6 +64,48 @@ export function CreatePage() {
     url?: string,
     images?: File[],
     level?: 'simple' | 'advanced',
+    reviewOutline?: boolean,
+    themePresetId?: string,
+  ) => {
+    const normalizedLevel = level ?? 'simple'
+    if (themePresetId) setChosenPresetId(themePresetId)
+
+    // Outline-first flow: fetch the outline, show review screen, then continue.
+    if (reviewOutline) {
+      setError(null)
+      setPhase('generating')
+      setStreamProgress({ step: 'Building outline…', done: 0, total: slideCount, preview: [] })
+      try {
+        const res = await generationApi.generateOutline(
+          prompt, slideCount, file, url, images, normalizedLevel,
+        )
+        setPendingPrompt({ prompt, slideCount: res.data.slides.length, file, url, images, level: normalizedLevel })
+        setOutlineSlides(res.data.slides as OutlineSlide[])
+        setOutlineDeckTitle(res.data.deck_title)
+        setStreamProgress(null)
+        setPhase('outline-review')
+      } catch (e: any) {
+        setError(e?.response?.data?.detail ?? e?.message ?? 'Outline generation failed.')
+        setStreamProgress(null)
+        setPhase('prompt')
+      }
+      return
+    }
+
+    await runStreamGeneration(prompt, slideCount, file, url, images, normalizedLevel, undefined, themePresetId)
+  }
+
+  // Consume an SSE generation stream and update UI state as events arrive.
+  // Shared by the auto-outline flow and the user-confirmed-outline flow.
+  const runStreamGeneration = async (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+    level: 'simple' | 'advanced' = 'simple',
+    outline?: OutlineSlide[],
+    presetIdOverride?: string,
   ) => {
     setPhase('generating')
     setError(null)
@@ -55,7 +113,7 @@ export function CreatePage() {
     setStreamProgress({ step: 'Starting…', done: 0, total: slideCount, preview: [] })
 
     try {
-      const response = await generationApi.generateStream(prompt, slideCount, file, url, images, level)
+      const response = await generationApi.generateStream(prompt, slideCount, file, url, images, level, outline)
       if (!response.ok || !response.body) {
         const text = await response.text().catch(() => '')
         throw new Error(text || `Stream failed (${response.status})`)
@@ -103,6 +161,16 @@ export function CreatePage() {
               step: `Slide ${data.index + 1} of ${data.total}`,
               preview: [...collected],
             } : prev)
+          } else if (evt === 'slide_image') {
+            const slideIdx = data.index
+            const imgBlock = data.block
+            if (collected[slideIdx] && imgBlock) {
+              collected[slideIdx] = {
+                ...collected[slideIdx],
+                blocks: [...collected[slideIdx].blocks, imgBlock],
+              }
+              setSlides([...collected])
+            }
           } else if (evt === 'error') {
             throw new Error(data.message || 'Generation failed')
           } else if (evt === 'complete') {
@@ -111,8 +179,27 @@ export function CreatePage() {
         }
       }
 
-      if (collected.length === 0 || !collectedTheme) {
-        throw new Error('Stream ended without producing any slides.')
+      if (collected.length === 0) {
+        throw new Error('Stream ended without producing any slides. Try again, or simplify the prompt.')
+      }
+      if (!collectedTheme) {
+        // We got slides but no theme — fall back to the default Vortex preset.
+        const fallbackTheme = presetToTheme(getThemeById('vortex'))
+        collectedTheme = fallbackTheme
+        setTheme(fallbackTheme)
+      }
+      // If the user picked a non-default theme on the create screen, re-color
+      // all slides to match that preset before entering the editor. Always
+      // prefer the value passed directly into this call (presetIdOverride)
+      // over the state, since state updates from handleGenerate are async
+      // and the closure here would see the stale default otherwise.
+      const effectivePresetId = presetIdOverride ?? chosenPresetId
+      const preset = getThemeById(effectivePresetId)
+      if (preset && preset.id !== 'vortex') {
+        const restyled = applyPresetToSlides(collected, preset)
+        setSlides(restyled)
+        setTheme(presetToTheme(preset))
+        setChosenPresetId(effectivePresetId)  // keep state in sync for handleSave's localStorage write
       }
       setSelectedSlideIndex(0)
       setSelectedBlockId(null)
@@ -125,6 +212,20 @@ export function CreatePage() {
       setStreamProgress(null)
       setPhase('prompt')
     }
+  }
+
+  const handleConfirmOutline = async (edited: OutlineSlide[]) => {
+    if (!pendingPrompt) return
+    await runStreamGeneration(
+      pendingPrompt.prompt,
+      edited.length,
+      pendingPrompt.file,
+      pendingPrompt.url,
+      pendingPrompt.images,
+      pendingPrompt.level,
+      edited,
+      chosenPresetId,  // by this point setChosenPresetId has committed from handleGenerate
+    )
   }
 
   const handleGenerateTopic = async (
@@ -216,6 +317,16 @@ export function CreatePage() {
               step: `Slide ${data.index + 1} of ${data.total}`,
               preview: [...collected],
             } : prev)
+          } else if (evt === 'slide_image') {
+            const slideIdx = data.index
+            const imgBlock = data.block
+            if (collected[slideIdx] && imgBlock) {
+              collected[slideIdx] = {
+                ...collected[slideIdx],
+                blocks: [...collected[slideIdx].blocks, imgBlock],
+              }
+              setSlides([...collected])
+            }
           } else if (evt === 'error') {
             throw new Error(data.message || 'Generation failed')
           } else if (evt === 'complete') {
@@ -224,8 +335,27 @@ export function CreatePage() {
         }
       }
 
-      if (collected.length === 0 || !collectedTheme) {
-        throw new Error('Stream ended without producing any slides.')
+      if (collected.length === 0) {
+        throw new Error('Stream ended without producing any slides. Try again, or simplify the prompt.')
+      }
+      if (!collectedTheme) {
+        // We got slides but no theme — fall back to the default Vortex preset.
+        const fallbackTheme = presetToTheme(getThemeById('vortex'))
+        collectedTheme = fallbackTheme
+        setTheme(fallbackTheme)
+      }
+      // If the user picked a non-default theme on the create screen, re-color
+      // all slides to match that preset before entering the editor. Always
+      // prefer the value passed directly into this call (presetIdOverride)
+      // over the state, since state updates from handleGenerate are async
+      // and the closure here would see the stale default otherwise.
+      const effectivePresetId = presetIdOverride ?? chosenPresetId
+      const preset = getThemeById(effectivePresetId)
+      if (preset && preset.id !== 'vortex') {
+        const restyled = applyPresetToSlides(collected, preset)
+        setSlides(restyled)
+        setTheme(presetToTheme(preset))
+        setChosenPresetId(effectivePresetId)  // keep state in sync for handleSave's localStorage write
       }
       setSelectedSlideIndex(0)
       setSelectedBlockId(null)
@@ -307,12 +437,37 @@ export function CreatePage() {
         theme_id: theme.id,
         token_count: generatedTokenCount ?? undefined,
       })
+      // Persist the chosen theme preset so the editor page picks it up.
+      // PresentationPage reads localStorage `theme_preset_{id}` on load.
+      try {
+        localStorage.setItem(`theme_preset_${res.data.id}`, chosenPresetId)
+      } catch {
+        // localStorage failures are non-fatal; the deck still loads, just with default theme.
+      }
       navigate(`/presentations/${res.data.id}`)
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Save failed. Please try again.')
     } finally {
       setSaving(false)
     }
+  }
+
+  if (phase === 'outline-review') {
+    return (
+      <>
+        {error && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white px-5 py-3 rounded-xl text-sm shadow-lg">
+            {error}
+          </div>
+        )}
+        <OutlineReviewScreen
+          deckTitle={outlineDeckTitle}
+          initialSlides={outlineSlides}
+          onBack={() => { setPhase('prompt'); setError(null) }}
+          onConfirm={handleConfirmOutline}
+        />
+      </>
+    )
   }
 
   if (phase === 'prompt' || phase === 'generating') {

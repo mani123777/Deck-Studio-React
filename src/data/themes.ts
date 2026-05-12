@@ -75,6 +75,30 @@ export const THEME_PRESETS: ThemePreset[] = [
     colors: { background: '#ecfdf5', surface: '#d1fae5', heading: '#064e3b', body: '#065f46', accent: '#10b981' },
     fonts: { heading: 'Montserrat', body: 'Open Sans' },
   },
+  // ── Editorial — magazine-style serif, warm off-white, oxblood accent.
+  // Use for thought-leadership, long-form, brand storytelling decks.
+  {
+    id: 'editorial',
+    name: 'Editorial',
+    colors: { background: '#FAF8F3', surface: '#F0EBE0', heading: '#1C1B17', body: '#3F3D37', accent: '#8B1A1A' },
+    fonts: { heading: 'Newsreader', body: 'Inter' },
+  },
+  // ── Brutalist — high-contrast cream/black with signal yellow.
+  // Use for bold product launches, tech announcements, agency decks.
+  {
+    id: 'brutalist',
+    name: 'Brutalist',
+    colors: { background: '#FFF9E6', surface: '#F5EFC8', heading: '#000000', body: '#1A1A1A', accent: '#FFD60A' },
+    fonts: { heading: 'Space Grotesk', body: 'Inter' },
+  },
+  // ── Forest — deep green dark theme with parchment text + emerald accent.
+  // Use for sustainability, climate-tech, biotech, nature/outdoor decks.
+  {
+    id: 'forest',
+    name: 'Forest',
+    colors: { background: '#0F2419', surface: '#1A3324', heading: '#F5F1E8', body: '#A8B5A0', accent: '#10B981' },
+    fonts: { heading: 'Sora', body: 'Inter' },
+  },
 ]
 
 export function getThemeById(id: string): ThemePreset {
