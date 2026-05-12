@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { presentationsApi, exportApi, themesApi, shareApi, imagesApi } from '../api/client'
+import { presentationsApi, exportApi, themesApi, shareApi, imagesApi, generationApi } from '../api/client'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { PropertyPanel } from '../components/Presentation/SlideEditor'
 import { ThemePanel } from '../components/Presentation/ThemePanel'
@@ -17,6 +17,7 @@ import {
 } from '../components/Presentation/LayoutsPanel'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
+import { presetToTheme as sharedPresetToTheme, applyPresetToSlides as sharedApplyPresetToSlides } from '../utils/themePreset'
 import type {
   Block, ChartDataPoint, ChartType, DeckLayout,
   PresentationDetail, Position, Slide, Styling, Theme,
@@ -31,59 +32,8 @@ const SLIDE_H = 720
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function presetToTheme(p: ThemePreset): Theme {
-  return {
-    id: p.id,
-    name: p.name,
-    colors: {
-      primary:    p.colors.heading,
-      secondary:  p.colors.surface,
-      accent:     p.colors.accent,
-      background: p.colors.background,
-      text:       p.colors.body,
-    },
-    fonts: {
-      heading: { family: p.fonts.heading, size: 52, weight: 800 },
-      body:    { family: p.fonts.body,    size: 16, weight: 400 },
-      caption: { family: p.fonts.body,    size: 12, weight: 400 },
-    },
-  }
-}
-
-function applyPresetToSlides(slides: Slide[], t: ThemePreset): Slide[] {
-  return slides.map((slide) => ({
-    ...slide,
-    background: { type: 'color' as const, value: t.colors.background },
-    blocks: slide.blocks.map((block) => {
-      switch (block.type) {
-        case 'title':
-        case 'heading':
-          return { ...block, styling: { ...block.styling, color: t.colors.heading, font_family: t.fonts.heading } }
-        case 'subtitle':
-        case 'body':
-        case 'text':
-        case 'caption':
-        case 'quote':
-        case 'bullet':
-          return { ...block, styling: { ...block.styling, color: t.colors.body, font_family: t.fonts.body } }
-        case 'badge':
-          return { ...block, styling: { ...block.styling, color: t.colors.accent } }
-        case 'shape':
-          return { ...block, styling: { ...block.styling, background_color: t.colors.accent, color: t.colors.accent } }
-        case 'panel':
-          return { ...block, styling: { ...block.styling, background_color: t.colors.surface } }
-        case 'card':
-          return { ...block, styling: { ...block.styling, background_color: t.colors.surface, color: t.colors.heading } }
-        case 'stat':
-          return { ...block, styling: { ...block.styling, color: t.colors.accent } }
-        case 'process_circle':
-          return { ...block, styling: { ...block.styling, background_color: t.colors.accent, color: '#ffffff' } }
-        default:
-          return { ...block, styling: { ...block.styling, color: t.colors.body } }
-      }
-    }),
-  }))
-}
+const presetToTheme = sharedPresetToTheme
+const applyPresetToSlides = sharedApplyPresetToSlides
 
 function getCanvasBg(hex: string): string {
   // Use the theme's background as the canvas surround when available.
@@ -190,6 +140,7 @@ export function PresentationPage() {
 
   const [themeOpen, setThemeOpen]       = useState(false)
   const [saveStatus, setSaveStatus]     = useState<SaveStatus>('idle')
+  const [regenerating, setRegenerating] = useState(false)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [editingBlockId, setEditingBlockId]   = useState<string | null>(null)
   const [activeTheme, setActiveTheme]   = useState<ThemePreset>(getThemeById('vortex'))
@@ -438,6 +389,61 @@ export function PresentationPage() {
   const handleNotesChange = (next: string) => {
     setSlides((prev) => prev.map((s, i) => i === activeSlide ? { ...s, notes: next } : s))
   }
+
+  // ── AI: regenerate current slide ───────────────────────────────────────────
+  const handleRegenerateSlide = useCallback(async () => {
+    const slide = slides[activeSlide]
+    if (!slide || regenerating) return
+    setRegenerating(true)
+    try {
+      // Pull a meaningful title from the slide's blocks (heading or title).
+      const headingBlock = slide.blocks.find(
+        (b) => b.type === 'heading' || b.type === 'title' || b.type === 'cta',
+      )
+      const slideTitle = headingBlock?.content ?? presentation?.title ?? ''
+      const deckTitles = slides.map((s) => {
+        const h = s.blocks.find((b) => b.type === 'heading' || b.type === 'title')
+        return h?.content ?? `Slide ${s.order}`
+      })
+      const instruction = window.prompt(
+        'Optional: any specific change? (e.g. "make it shorter", "add more data")\nLeave blank to fully regenerate.',
+        '',
+      )
+      if (instruction === null) {
+        setRegenerating(false)
+        return
+      }
+      const res = await generationApi.regenerateSlide({
+        original_prompt: presentation?.description || presentation?.title || '',
+        level: 'advanced',
+        slide_type: slide.type,
+        slide_title: slideTitle,
+        deck_titles: deckTitles,
+        instruction,
+      })
+      const updated = res.data.slide as { type: string; background: any; blocks: any[]; notes?: string }
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== activeSlide
+            ? s
+            : {
+                ...s,
+                type: updated.type,
+                background: updated.background,
+                blocks: updated.blocks,
+                notes: updated.notes ?? s.notes ?? '',
+              },
+        ),
+      )
+      setSelectedBlockId(null)
+      setEditingBlockId(null)
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail ?? e?.message ?? 'Regeneration failed'
+      window.alert(msg)
+    } finally {
+      setRegenerating(false)
+    }
+  }, [slides, activeSlide, regenerating, presentation])
 
   // ── Deck layouts ────────────────────────────────────────────────────────────
   const handleSaveLayout = (name: string) => {
@@ -1029,6 +1035,8 @@ export function PresentationPage() {
               onPreview={enterPresent}
               onDelete={handleDeleteSelected}
               onEditChart={selectedBlock?.type === 'chart' ? handleEditChart : undefined}
+              onRegenerateSlide={handleRegenerateSlide}
+              regenerating={regenerating}
             />
           </div>
 
@@ -1303,6 +1311,9 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
+  const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 
   useEffect(() => {
     const compute = () => {
@@ -1313,11 +1324,77 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
     compute()
     window.addEventListener('resize', compute)
     return () => window.removeEventListener('resize', compute)
-  }, [])
+  }, [notesOpen])
+
+  // 'N' toggles speaker notes; 'S' toggles speech.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        setNotesOpen((v) => !v)
+      } else if (e.key === 's' || e.key === 'S') {
+        e.preventDefault()
+        toggleSpeak()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   const slide = slides[current]
   const isFirst = current === 0
   const isLast  = current === slides.length - 1
+  const notes = (slide?.notes ?? '').trim()
+
+  // Pick a "good" voice once when the synth voice list is ready.
+  const pickVoice = (): SpeechSynthesisVoice | null => {
+    if (!ttsSupported) return null
+    const voices = window.speechSynthesis.getVoices()
+    if (!voices.length) return null
+    // Prefer en-US Google/Microsoft voices, then any en-* voice, then default.
+    const score = (v: SpeechSynthesisVoice) => {
+      let s = 0
+      if (v.lang?.startsWith('en')) s += 10
+      if (v.lang === 'en-US') s += 5
+      if (/Google|Microsoft|Natural|Neural/i.test(v.name)) s += 3
+      if (v.default) s += 1
+      return s
+    }
+    return [...voices].sort((a, b) => score(b) - score(a))[0] ?? null
+  }
+
+  const speakNow = (text: string) => {
+    if (!ttsSupported || !text.trim()) return
+    window.speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    const v = pickVoice()
+    if (v) { u.voice = v; u.lang = v.lang }
+    u.rate = 1.0
+    u.pitch = 1.0
+    u.onend = () => setSpeaking(false)
+    u.onerror = () => setSpeaking(false)
+    setSpeaking(true)
+    window.speechSynthesis.speak(u)
+  }
+
+  const toggleSpeak = () => {
+    if (!ttsSupported) return
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    speakNow(notes || 'No speaker notes for this slide.')
+  }
+
+  // Stop speech when navigating away from the slide or exiting present mode.
+  useEffect(() => {
+    if (!ttsSupported) return
+    return () => {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+    }
+  }, [current, ttsSupported])
 
   return (
     <div
@@ -1337,6 +1414,34 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
           <SlidePreview slide={slide} theme={theme} scale={scale} />
         )}
       </div>
+
+      {/* Speaker notes panel (toggle with N) */}
+      {notesOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            flexShrink: 0,
+            maxHeight: '28vh',
+            overflowY: 'auto',
+            padding: '18px 28px',
+            background: 'rgba(15, 15, 18, 0.95)',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            color: 'rgba(255,255,255,0.85)',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 15,
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.4)', marginBottom: 8,
+          }}>
+            Speaker notes
+          </div>
+          {notes || <span style={{ color: 'rgba(255,255,255,0.3)' }}>No notes for this slide.</span>}
+        </div>
+      )}
 
       {/* Controls bar */}
       <div style={{
@@ -1380,18 +1485,49 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
           <NavBtn label="→" disabled={isLast} onClick={() => onChangeCurrent(current + 1)} />
         </div>
 
-        {/* Exit */}
-        <button
-          onClick={onExit}
-          style={{
-            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-            color: 'rgba(255,255,255,0.6)', borderRadius: 7,
-            padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            minWidth: 60,
-          }}
-        >
-          ✕ Exit
-        </button>
+        {/* Right controls */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {ttsSupported && (
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleSpeak() }}
+              title={speaking ? 'Stop narration (S)' : 'Read notes aloud (S)'}
+              style={{
+                background: speaking ? 'rgba(180,60,40,0.35)' : 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: speaking ? '#fca5a5' : 'rgba(255,255,255,0.6)',
+                borderRadius: 7,
+                padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {speaking ? '■ Stop' : '▶ Speak'}
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setNotesOpen((v) => !v) }}
+            title="Toggle speaker notes (N)"
+            style={{
+              background: notesOpen ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: notesOpen ? '#a5b4fc' : 'rgba(255,255,255,0.6)',
+              borderRadius: 7,
+              padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Notes
+          </button>
+          <button
+            onClick={onExit}
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.6)', borderRadius: 7,
+              padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              minWidth: 60,
+            }}
+          >
+            ✕ Exit
+          </button>
+        </div>
       </div>
     </div>
   )

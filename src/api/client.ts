@@ -137,6 +137,7 @@ export const generationApi = {
     url?: string,
     images?: File[],
     level?: 'simple' | 'advanced',
+    outline?: Array<{ order: number; type: string; title: string }>,
   ) => {
     const form = new FormData()
     form.append('prompt', prompt)
@@ -147,6 +148,7 @@ export const generationApi = {
       for (const img of images) form.append('images', img)
     }
     if (level) form.append('level', level)
+    if (outline?.length) form.append('outline_json', JSON.stringify(outline))
     const token = localStorage.getItem('access_token')
     return fetch(`${BASE_URL}/api/v1/generate/stream`, {
       method: 'POST',
@@ -154,6 +156,45 @@ export const generationApi = {
       body: form,
     })
   },
+  generateOutline: (
+    prompt: string,
+    slideCount: number,
+    file?: File,
+    url?: string,
+    images?: File[],
+    level?: 'simple' | 'advanced',
+  ) => {
+    const form = new FormData()
+    form.append('prompt', prompt)
+    form.append('slide_count', String(slideCount))
+    if (file) form.append('file', file)
+    if (url) form.append('url', url)
+    if (images?.length) {
+      for (const img of images) form.append('images', img)
+    }
+    if (level) form.append('level', level)
+    return api.post<{
+      deck_title: string
+      summary: string
+      audience: string
+      tone: string
+      sections: Array<{ name: string; content: string; slide_count: number }>
+      slides: Array<{ order: number; type: string; title: string }>
+      token_count: number
+    }>('/generate/outline', form)
+  },
+  regenerateSlide: (payload: {
+    original_prompt: string
+    level: 'simple' | 'advanced'
+    slide_type: string
+    slide_title: string
+    deck_titles: string[]
+    instruction?: string
+  }) =>
+    api.post<{
+      slide: { type: string; background: any; blocks: any[]; notes?: string }
+      token_count: number
+    }>('/generate/slide', payload),
 }
 
 // Image generation
