@@ -16,6 +16,8 @@ interface Props {
   onPreview: () => void
   onDelete: () => void
   onEditChart?: () => void
+  onRegenerateSlide?: () => void
+  regenerating?: boolean
 }
 
 const TEXT_TYPES = new Set(['title', 'heading', 'subtitle', 'body', 'text', 'caption', 'quote', 'bullet', 'badge', 'card'])
@@ -32,6 +34,7 @@ export function EditorToolbar({
   block, saveStatus,
   onStylingChange, onInsertText, onInsertImage, onInsertChart,
   onAddSlide, onApplyLayout, onPreview, onDelete, onEditChart,
+  onRegenerateSlide, regenerating,
 }: Props) {
   const s = block?.styling
   const align = s?.text_align ?? 'left'
@@ -102,6 +105,15 @@ export function EditorToolbar({
           />
         )}
       </div>
+
+      {onRegenerateSlide && (
+        <Item
+          icon={<IconSparkle />}
+          label={regenerating ? 'Regenerating…' : 'Regenerate'}
+          onClick={regenerating ? () => {} : onRegenerateSlide}
+          active={!!regenerating}
+        />
+      )}
 
       <Divider />
 
@@ -357,3 +369,4 @@ const IconAlignRight  = () => SVG(<><line x1="3" y1="6"  x2="21" y2="6"  /><line
 const IconTrash       = () => SVG(<><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></>)
 const IconEye         = () => SVG(<><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" /><circle cx="12" cy="12" r="3" /></>)
 const IconCheck       = () => SVG(<polyline points="20 6 9 17 4 12" />)
+const IconSparkle     = () => SVG(<><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" /></>)
