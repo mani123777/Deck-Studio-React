@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/client'
 import { useAuthStore } from '../store/authStore'
 import { useToast } from '../components/ui/Toast'
-import { Eye, EyeOff, ArrowRight, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -14,6 +14,8 @@ export function LoginPage() {
   const [show, setShow] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [emailFocused, setEmailFocused] = useState(false)
+  const [passwordFocused, setPasswordFocused] = useState(false)
 
   const ready = email.trim().length > 0 && password.length > 0
 
@@ -50,280 +52,517 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--paper)' }}>
-      {/* LEFT — form */}
-      <div
-        className="flex-1 flex flex-col p-8 lg:p-14"
-        style={{ background: 'var(--paper)' }}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: 'var(--ink-strong)' }}
-          >
-            <span className="text-white text-[10px] font-bold tracking-tight">WAC</span>
-          </div>
-          <span
-            className="font-serif text-[18px] tracking-tighter"
-            style={{ color: 'var(--ink-strong)' }}
-          >
-            Deck Studio
-          </span>
-        </div>
+    <div className="min-h-screen flex">
 
-        {/* Form */}
-        <div className="flex-1 flex items-center">
-          <div className="w-full max-w-[420px]">
-            <p className="eyebrow mb-4">— Welcome back</p>
-            <h1
-              className="font-serif leading-[1.05] tracking-tightest text-[34px] md:text-[44px]"
+      {/* ── LEFT: form panel ─────────────────────────────────────────────────── */}
+      <div
+        className="flex-1 flex flex-col min-h-screen relative overflow-hidden"
+        style={{ background: '#FEFDFB' }}
+      >
+        {/* Dot-grid texture — fades to edges */}
+        <div
+          className="absolute inset-0 pointer-events-none select-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.055) 1px, transparent 1px)',
+            backgroundSize: '30px 30px',
+            maskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 75%)',
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col min-h-screen px-8 py-8 lg:px-14 lg:py-10 xl:px-16">
+
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'var(--ink-strong)' }}
+            >
+              <span className="text-white text-[9px] font-bold tracking-tight">WAC</span>
+            </div>
+            <span
+              className="font-serif text-[17px] tracking-tighter"
               style={{ color: 'var(--ink-strong)' }}
             >
-              Sign in to your
-              <br />
-              <span className="font-serif-italic" style={{ color: 'var(--ink-strong)' }}>workspace.</span>
-            </h1>
-            <p
-              className="text-[14.5px] mt-5 mb-10 leading-relaxed"
-              style={{ color: 'var(--ink-soft)' }}
-            >
-              Continue your decks where you left off.
-            </p>
+              Deck Studio
+            </span>
+          </div>
 
-            {error && (
-              <div
-                className="mb-6 px-4 py-3 rounded-xl text-[13px]"
-                style={{
-                  background: 'var(--accent-soft)',
-                  border: '1px solid var(--line)',
-                  color: 'var(--accent)',
-                }}
+          {/* Form — vertically centered */}
+          <div className="flex-1 flex items-center justify-center py-12">
+            <div className="w-full max-w-[380px]">
+
+              {/* Heading group */}
+              <p className="eyebrow mb-5" style={{ color: 'var(--ink-muted)' }}>— Welcome back</p>
+              <h1
+                className="font-serif leading-[1.06] tracking-tightest mb-4"
+                style={{ fontSize: 'clamp(34px, 4vw, 46px)', color: 'var(--ink-strong)' }}
               >
-                {error}
-              </div>
-            )}
+                Sign in to
+                <br />
+                <span className="font-serif-italic">your workspace.</span>
+              </h1>
+              <p
+                className="text-[14px] leading-relaxed mb-9"
+                style={{ color: 'var(--ink-soft)' }}
+              >
+                Continue your decks where you left off.
+              </p>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label
-                  className="block eyebrow mb-2"
-                  style={{ color: 'var(--ink-strong)' }}
-                >
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="w-full h-12 px-4 rounded-xl text-[14px] focus:outline-none transition-colors"
+              {/* Error */}
+              {error && (
+                <div
+                  className="mb-6 px-4 py-3 rounded-xl text-[13px] flex items-start gap-2.5"
                   style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--line)',
+                    background: 'rgba(0,0,0,0.04)',
+                    border: '1px solid rgba(0,0,0,0.09)',
                     color: 'var(--ink-strong)',
                   }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="eyebrow" style={{ color: 'var(--ink-strong)' }}>
-                    Password
-                  </label>
-                  <Link
-                    to="/forgot-password"
-                    className="text-[12px] font-semibold underline-offset-4 hover:underline"
-                    style={{ color: 'var(--ink-strong)' }}
-                  >
-                    Forgot password?
-                  </Link>
+                >
+                  <span className="mt-px opacity-40 flex-shrink-0">!</span>
+                  {error}
                 </div>
-                <div className="relative">
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-3.5">
+
+                {/* Email */}
+                <div>
+                  <label className="eyebrow block mb-2" style={{ color: 'var(--ink-muted)' }}>
+                    Email address
+                  </label>
                   <input
-                    type={show ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full h-12 pl-4 pr-12 rounded-xl text-[14px] focus:outline-none transition-colors"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    autoComplete="email"
+                    className="w-full h-[52px] px-4 rounded-xl text-[14px] focus:outline-none transition-all duration-150"
                     style={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--line)',
+                      background: emailFocused ? '#fff' : 'rgba(0,0,0,0.035)',
+                      border: `1px solid ${emailFocused ? 'rgba(0,0,0,0.6)' : 'transparent'}`,
                       color: 'var(--ink-strong)',
+                      boxShadow: emailFocused
+                        ? '0 0 0 3px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.06)'
+                        : 'none',
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ink-strong)')}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setEmailFocused(false)}
                   />
+                </div>
+
+                {/* Password */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="eyebrow" style={{ color: 'var(--ink-muted)' }}>
+                      Password
+                    </label>
+                    <Link
+                      to="/forgot-password"
+                      className="text-[12px] font-medium transition-opacity hover:opacity-60"
+                      style={{ color: 'var(--ink-soft)' }}
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={show ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      className="w-full h-[52px] pl-4 pr-12 rounded-xl text-[14px] focus:outline-none transition-all duration-150"
+                      style={{
+                        background: passwordFocused ? '#fff' : 'rgba(0,0,0,0.035)',
+                        border: `1px solid ${passwordFocused ? 'rgba(0,0,0,0.6)' : 'transparent'}`,
+                        color: 'var(--ink-strong)',
+                        boxShadow: passwordFocused
+                          ? '0 0 0 3px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.06)'
+                          : 'none',
+                      }}
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => setPasswordFocused(false)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow(!show)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-50"
+                      style={{ color: 'var(--ink-muted)' }}
+                    >
+                      {show ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <div className="pt-2.5">
                   <button
-                    type="button"
-                    onClick={() => setShow(!show)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors"
-                    style={{ color: 'var(--ink-muted)' }}
+                    type="submit"
+                    disabled={!ready || loading}
+                    className="w-full h-[52px] rounded-xl text-[14px] font-semibold tracking-[-0.01em] flex items-center justify-center gap-2 transition-all duration-150"
+                    style={{
+                      background: ready && !loading ? 'var(--ink-strong)' : 'rgba(0,0,0,0.12)',
+                      color: ready && !loading ? '#fff' : 'rgba(0,0,0,0.28)',
+                      cursor: ready && !loading ? 'pointer' : 'not-allowed',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!ready || loading) return
+                      e.currentTarget.style.transform = 'translateY(-1px)'
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.22)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
                   >
-                    {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {loading ? (
+                      <span className="opacity-60">Signing in…</span>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight size={14} strokeWidth={2.2} />
+                      </>
+                    )}
                   </button>
                 </div>
-              </div>
+              </form>
 
-              <button
-                type="submit"
-                disabled={!ready || loading}
-                className="w-full h-12 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2 transition-all"
-                style={{
-                  background: 'var(--ink-strong)',
-                  color: '#fff',
-                  opacity: ready && !loading ? 1 : 0.45,
-                  cursor: ready && !loading ? 'pointer' : 'not-allowed',
-                  marginTop: 32,
-                }}
-                onMouseEnter={(e) => {
-                  if (ready && !loading) e.currentTarget.style.background = '#2A2620'
-                }}
-                onMouseLeave={(e) => {
-                  if (ready && !loading) e.currentTarget.style.background = 'var(--ink-strong)'
-                }}
+              {/* Register link */}
+              <p
+                className="text-center text-[13px] mt-8"
+                style={{ color: 'var(--ink-soft)' }}
               >
-                {loading ? 'Signing in…' : 'Continue'}
-                {!loading && <ArrowRight size={14} />}
-              </button>
-            </form>
+                New here?{' '}
+                <Link
+                  to="/register"
+                  className="font-semibold transition-opacity hover:opacity-60"
+                  style={{ color: 'var(--ink-strong)' }}
+                >
+                  Create an account
+                </Link>
+              </p>
+            </div>
+          </div>
 
+          {/* Footer */}
+          <div className="flex items-center justify-between">
+            <p className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
+              © 2026 WAC Deck Studio
+            </p>
+            <div className="flex items-center gap-5">
+              <a
+                href="#"
+                className="text-[11.5px] transition-opacity hover:opacity-60"
+                style={{ color: 'var(--ink-faint)' }}
+              >
+                Privacy
+              </a>
+              <a
+                href="#"
+                className="text-[11.5px] transition-opacity hover:opacity-60"
+                style={{ color: 'var(--ink-faint)' }}
+              >
+                Terms
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── RIGHT: editorial showcase ─────────────────────────────────────────── */}
+      <div
+        className="hidden lg:flex w-[54%] relative overflow-hidden flex-col"
+        style={{ background: '#070605' }}
+      >
+        {/* Layered ambient glows */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: '-180px', right: '-100px',
+            width: '700px', height: '700px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,252,245,0.08) 0%, transparent 60%)',
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '560px', height: '560px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,248,228,0.04) 0%, transparent 65%)',
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            bottom: '-160px', left: '-80px',
+            width: '480px', height: '480px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(210,210,255,0.03) 0%, transparent 70%)',
+          }}
+        />
+
+        {/* Top status badge */}
+        <div className="relative z-10 px-12 pt-10">
+          <div
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full"
+            style={{
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.04)',
+            }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{ background: 'rgba(134,239,172,0.9)' }}
+            />
             <p
-              className="text-center text-[13px] mt-8"
-              style={{ color: 'var(--ink-soft)' }}
+              className="font-mono text-[10px] uppercase tracking-[0.2em]"
+              style={{ color: 'rgba(255,255,255,0.45)' }}
             >
-              New here?{' '}
-              <Link
-                to="/register"
-                className="font-semibold underline-offset-4 hover:underline"
-                style={{ color: 'var(--ink-strong)' }}
-              >
-                Create an account
-              </Link>
+              Premium presentations · Powered by AI
             </p>
           </div>
         </div>
 
-        <p className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
-          © 2026 WAC Deck Studio
-        </p>
-      </div>
+        {/* Center — deck mockup */}
+        <div className="relative z-10 flex-1 flex items-center justify-center px-10 py-10">
+          <div className="relative w-full max-w-[440px]">
 
-      {/* RIGHT — editorial showcase (dark) */}
-      <div
-        className="hidden lg:flex flex-1 relative overflow-hidden p-14 flex-col justify-between"
-        style={{ background: '#0A0907' }}
-      >
-        {/* subtle warm radial glow */}
-        <div
-          className="absolute -top-32 -right-24 w-[520px] h-[520px] rounded-full pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(circle, rgba(255,255,255,0.06), transparent 65%)',
-          }}
-        />
-        {/* faint bottom-left vignette for depth */}
-        <div
-          className="absolute -bottom-40 -left-32 w-[460px] h-[460px] rounded-full pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(circle, rgba(255,255,255,0.03), transparent 70%)',
-          }}
-        />
+            {/* Glow behind the cards */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                top: '20%', left: '10%', right: '10%',
+                height: '60%',
+                background: 'radial-gradient(ellipse, rgba(255,255,255,0.06) 0%, transparent 70%)',
+                filter: 'blur(20px)',
+              }}
+            />
 
-        {/* Top — eyebrow */}
-        <div className="relative z-10 flex items-center gap-2">
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: '#fff' }}
-          />
-          <p
-            className="font-mono text-[10.5px] uppercase tracking-[0.18em]"
-            style={{ color: 'rgba(255,255,255,0.55)' }}
-          >
-            Premium presentations · powered by AI
-          </p>
+            {/* Back card */}
+            <div
+              className="absolute w-full rounded-2xl"
+              style={{
+                height: '240px',
+                top: '16px',
+                transform: 'rotate(2.2deg) scale(0.94)',
+                transformOrigin: 'center bottom',
+                background: 'rgba(255,255,255,0.022)',
+                border: '1px solid rgba(255,255,255,0.05)',
+              }}
+            />
+            {/* Middle card */}
+            <div
+              className="absolute w-full rounded-2xl"
+              style={{
+                height: '240px',
+                top: '8px',
+                transform: 'rotate(1deg) scale(0.97)',
+                transformOrigin: 'center bottom',
+                background: 'rgba(255,255,255,0.038)',
+                border: '1px solid rgba(255,255,255,0.075)',
+              }}
+            />
+
+            {/* Front card — slide preview */}
+            <div
+              className="relative rounded-2xl overflow-hidden"
+              style={{
+                background: 'rgba(255,255,255,0.065)',
+                border: '1px solid rgba(255,255,255,0.13)',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
+              }}
+            >
+              {/* Window chrome */}
+              <div
+                className="flex items-center justify-between px-4 py-3"
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.07)',
+                  background: 'rgba(255,255,255,0.03)',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1.5">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-2 h-2 rounded-full"
+                        style={{ background: 'rgba(255,255,255,0.14)' }}
+                      />
+                    ))}
+                  </div>
+                  <div
+                    className="h-2.5 w-24 rounded-full"
+                    style={{ background: 'rgba(255,255,255,0.09)' }}
+                  />
+                </div>
+                <div
+                  className="h-5 px-3 rounded-md flex items-center"
+                  style={{
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <div className="h-1.5 w-10 rounded-full" style={{ background: 'rgba(255,255,255,0.25)' }} />
+                </div>
+              </div>
+
+              {/* Slide body */}
+              <div className="p-6">
+                {/* Eyebrow line */}
+                <div className="h-2 w-16 rounded-full mb-4" style={{ background: 'rgba(255,255,255,0.18)' }} />
+                {/* Title lines */}
+                <div className="h-[14px] w-[73%] rounded-full mb-2" style={{ background: 'rgba(255,255,255,0.28)' }} />
+                <div className="h-[14px] w-[48%] rounded-full mb-7" style={{ background: 'rgba(255,255,255,0.18)' }} />
+
+                {/* Content cards */}
+                <div className="grid grid-cols-3 gap-2.5 mb-5">
+                  {[
+                    { hd: '68%', lines: ['100%', '85%', '60%'] },
+                    { hd: '80%', lines: ['100%', '70%', '50%'] },
+                    { hd: '56%', lines: ['100%', '65%'] },
+                  ].map((card, i) => (
+                    <div
+                      key={i}
+                      className="rounded-xl p-3"
+                      style={{
+                        background: 'rgba(255,255,255,0.038)',
+                        border: '1px solid rgba(255,255,255,0.075)',
+                      }}
+                    >
+                      <div
+                        className="h-2 rounded-full mb-2.5"
+                        style={{ width: card.hd, background: 'rgba(255,255,255,0.22)' }}
+                      />
+                      {card.lines.map((w, j) => (
+                        <div
+                          key={j}
+                          className={`h-1.5 rounded-full ${j < card.lines.length - 1 ? 'mb-1.5' : ''}`}
+                          style={{ width: w, background: 'rgba(255,255,255,0.09)' }}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bottom bar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-[5px] h-[5px] rounded-full"
+                        style={{
+                          background: i < 3 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)',
+                        }}
+                      />
+                    ))}
+                    <span
+                      className="text-[10px] font-mono ml-1"
+                      style={{ color: 'rgba(255,255,255,0.28)' }}
+                    >
+                      3 / 8
+                    </span>
+                  </div>
+                  <div
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: 'rgba(134,239,172,0.85)' }}
+                    />
+                    <span
+                      className="font-mono text-[10px]"
+                      style={{ color: 'rgba(255,255,255,0.38)' }}
+                    >
+                      Generated in 9s
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Floating pill caption */}
+            <div
+              className="absolute left-1/2 -translate-x-1/2 -bottom-5 inline-flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap"
+              style={{
+                background: 'rgba(255,255,255,0.055)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <div
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.5)' }}
+              />
+              <span
+                className="font-mono text-[10px] uppercase tracking-[0.16em]"
+                style={{ color: 'rgba(255,255,255,0.4)' }}
+              >
+                AI-generated deck
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Middle — quote */}
-        <div className="relative z-10 max-w-xl">
+        {/* Quote */}
+        <div className="relative z-10 px-12 pb-8">
           <p
-            className="font-serif leading-[1.1] tracking-tightest text-[30px] md:text-[40px]"
-            style={{ color: '#fff' }}
+            className="font-serif tracking-tightest leading-[1.08]"
+            style={{ fontSize: 'clamp(24px, 2.6vw, 34px)', color: '#fff' }}
           >
-            “Designed for the
+            "Designed for the
             <br />
             <span
               className="font-serif-italic"
-              style={{ color: 'rgba(255,255,255,0.72)' }}
+              style={{ color: 'rgba(255,255,255,0.6)' }}
             >
-              quiet professional.”
+              quiet professional."
             </span>
           </p>
-
-          {/* hairline divider so attribution feels anchored, not floating */}
-          <div
-            className="mt-10 mb-6"
-            style={{ height: 1, background: 'rgba(255,255,255,0.08)' }}
-          />
-
-          <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.10)',
-              }}
-            >
-              <Sparkles size={14} style={{ color: '#fff' }} />
-            </div>
-            <div>
-              <p
-                className="font-serif text-[14px] leading-tight"
-                style={{ color: '#fff' }}
-              >
-                Studio Workspace
-              </p>
-              <p
-                className="text-[11.5px] mt-0.5"
-                style={{ color: 'rgba(255,255,255,0.45)' }}
-              >
-                Built for teams who present often.
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* Bottom — feature list */}
-        <div className="relative z-10 grid grid-cols-3 gap-6">
-          {[
-            { n: '01', t: 'AI generation', d: 'Decks from a prompt.' },
-            { n: '02', t: 'Premium templates', d: 'Hand-tuned by designers.' },
-            { n: '03', t: 'Export ready', d: 'PPTX, PDF, HTML.' },
-          ].map((f) => (
-            <div key={f.n}>
-              <p
-                className="font-mono text-[10.5px] uppercase tracking-[0.18em] mb-2"
-                style={{ color: 'rgba(255,255,255,0.40)' }}
-              >
-                {f.n}
-              </p>
-              <p
-                className="font-serif text-[16px] leading-tight tracking-tighter mb-1"
-                style={{ color: '#fff' }}
-              >
-                {f.t}
-              </p>
-              <p
-                className="text-[11.5px]"
-                style={{ color: 'rgba(255,255,255,0.45)' }}
-              >
-                {f.d}
-              </p>
-            </div>
-          ))}
+        {/* Feature grid */}
+        <div className="relative z-10 px-12 pb-10">
+          <div
+            className="h-px mb-8"
+            style={{ background: 'rgba(255,255,255,0.07)' }}
+          />
+          <div className="grid grid-cols-3 gap-6">
+            {[
+              { n: '01', t: 'AI generation', d: 'Decks from a prompt.' },
+              { n: '02', t: 'Premium templates', d: 'Hand-tuned by designers.' },
+              { n: '03', t: 'Export ready', d: 'PPTX, PDF, HTML.' },
+            ].map((f) => (
+              <div key={f.n}>
+                <p
+                  className="font-mono text-[10px] uppercase tracking-[0.18em] mb-2"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                >
+                  {f.n}
+                </p>
+                <p
+                  className="font-serif text-[15px] leading-tight tracking-tighter mb-1"
+                  style={{ color: 'rgba(255,255,255,0.92)' }}
+                >
+                  {f.t}
+                </p>
+                <p
+                  className="text-[11.5px] leading-snug"
+                  style={{ color: 'rgba(255,255,255,0.38)' }}
+                >
+                  {f.d}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
