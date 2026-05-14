@@ -17,6 +17,9 @@ interface Props {
     themePresetId?: string,
   ) => void
   isGenerating: boolean
+  /** Optional initial prompt — used when the user typed something on the
+   *  dashboard quick-input and got navigated here. */
+  defaultPrompt?: string
 }
 
 /** Gamma-style template cards — each carries category, prompt, palette
@@ -183,9 +186,9 @@ function parseSlideCountFromPrompt(text: string): number | null {
   return null
 }
 
-export function PromptScreen({ onGenerate, isGenerating }: Props) {
+export function PromptScreen({ onGenerate, isGenerating, defaultPrompt }: Props) {
   const navigate = useNavigate()
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(defaultPrompt ?? '')
   const [slideCount, setSlideCount] = useState(5)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -357,7 +360,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
           <ArrowLeft size={14} />
           Back
         </button>
-        <p className="eyebrow">— New deck</p>
+        <p className="eyebrow">— New Presentation</p>
         <div className="w-[80px]" />
       </div>
 
@@ -807,7 +810,7 @@ export function PromptScreen({ onGenerate, isGenerating }: Props) {
                 ) : (
                   <>
                     <Sparkles size={14} />
-                    Generate deck
+                    Generate Presentation
                     <span style={{ opacity: 0.55, marginLeft: 4, fontSize: 11, fontWeight: 600 }}>⌘↵</span>
                   </>
                 )}

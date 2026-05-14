@@ -30,7 +30,7 @@ export function BrandKitPage() {
     try {
       const { data } = await brandKitApi.update(kit)
       setKit(data)
-      toast.success('Brand kit saved', 'New decks will use these defaults.')
+      toast.success('Brand kit saved', 'New presentations will use these defaults.')
     } catch (err: any) {
       toast.error('Save failed', err.response?.data?.detail ?? 'Unknown error')
     } finally {
@@ -49,7 +49,7 @@ export function BrandKitPage() {
   return (
     <AppLayout>
       <div style={{ maxWidth: 880, margin: '0 auto', padding: '32px 40px' }}>
-        <p className="eyebrow" style={{ marginBottom: 8 }}>— Workspace</p>
+        <p className="eyebrow" style={{ marginBottom: 8 }}>— Studio</p>
         <h1 className="font-serif" style={{ fontSize: 40, color: 'var(--ink-strong)', letterSpacing: '-0.02em', marginBottom: 8 }}>
           Brand kit
         </h1>

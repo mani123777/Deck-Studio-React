@@ -100,7 +100,7 @@ export function ProjectsPage() {
       <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
         <div className="flex items-end justify-between mb-10 flex-wrap gap-4">
           <div>
-            <p className="eyebrow mb-3">— Workspace</p>
+            <p className="eyebrow mb-3">— Studio</p>
             <h1
               className="font-serif leading-[1.05] tracking-tighter text-[34px] md:text-[44px]"
               style={{ color: 'var(--ink-strong)' }}

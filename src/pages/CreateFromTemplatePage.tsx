@@ -222,7 +222,7 @@ export function CreateFromTemplatePage() {
             Back
           </button>
           <div className="text-center min-w-0">
-            <p className="eyebrow mb-0.5">— New deck</p>
+            <p className="eyebrow mb-0.5">— New Presentation</p>
             <p
               className="font-serif text-[15px] truncate tracking-tighter"
               style={{ color: 'var(--ink-strong)' }}

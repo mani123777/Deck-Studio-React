@@ -1262,7 +1262,7 @@ function GenerateModal({
           <div>
             <p className="eyebrow mb-1">— Generate</p>
             <h2 className="font-serif text-[22px] tracking-tighter" style={{ color: 'var(--ink-strong)' }}>
-              New deck from project
+              New presentation from project
             </h2>
           </div>
           <button

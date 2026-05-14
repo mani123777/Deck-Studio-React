@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState, useCallback } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Play, Save } from 'lucide-react'
 import { generationApi, presentationsApi, BASE_URL } from '../api/client'
 import type { Slide, Theme, Block } from '../types'
@@ -31,6 +31,9 @@ const CANVAS_PAD = 56
 
 export function CreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // Allow the dashboard quick-input to pre-fill the prompt via ?prompt=…
+  const defaultPrompt = useMemo(() => searchParams.get('prompt') ?? '', [searchParams])
 
   const [phase, setPhase]                   = useState<Phase>('prompt')
   const [slides, setSlides]                 = useState<Slide[]>([])
@@ -543,7 +546,7 @@ export function CreatePage() {
         )}
 
         {mode === 'prompt' ? (
-          <PromptScreen onGenerate={handleGenerate} isGenerating={phase === 'generating'} />
+          <PromptScreen onGenerate={handleGenerate} isGenerating={phase === 'generating'} defaultPrompt={defaultPrompt} />
         ) : (
           <TopicScreen onGenerate={handleGenerateTopic} isGenerating={phase === 'generating'} />
         )}

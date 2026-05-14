@@ -18,6 +18,7 @@ import {
 } from '../components/Presentation/LayoutsPanel'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
+import { useSlideHistory } from '../hooks/useSlideHistory'
 import { presetToTheme as sharedPresetToTheme, applyPresetToSlides as sharedApplyPresetToSlides } from '../utils/themePreset'
 import type {
   Block, ChartDataPoint, ChartType, DeckLayout,
@@ -165,7 +166,6 @@ export function PresentationPage() {
   const [aiImageOpen, setAiImageOpen]   = useState(false)
   const [aiImageBlockId, setAiImageBlockId] = useState<string | null>(null)
   const [rewriteOpen, setRewriteOpen]   = useState(false)
-  const [rewriteBusy, setRewriteBusy]   = useState(false)
 
   // Chart insert / edit modal
   const [chartModalOpen, setChartModalOpen]   = useState(false)
@@ -1362,8 +1362,6 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
   onExit: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const presenterMainRef = useRef<HTMLDivElement>(null)
-  const presenterNextRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [notesOpen, setNotesOpen] = useState(false)
   const [speaking, setSpeaking] = useState(false)
@@ -1374,14 +1372,6 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
       if (containerRef.current) {
         const { clientWidth, clientHeight } = containerRef.current
         setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
-      }
-      if (presenterMainRef.current) {
-        const { clientWidth, clientHeight } = presenterMainRef.current
-        setPresenterScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H) * 0.95)
-      }
-      if (presenterNextRef.current) {
-        const { clientWidth, clientHeight } = presenterNextRef.current
-        setPresenterNextScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H) * 0.92)
       }
     }
     compute()
@@ -1405,7 +1395,6 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
   })
 
   const slide = slides[current]
-  const nextSlide = slides[current + 1] ?? null
   const isFirst = current === 0
   const isLast  = current === slides.length - 1
   const notes = (slide?.notes ?? '').trim()
@@ -1740,203 +1729,4 @@ function AiImageModal({
       </div>
     </div>
   )
-}
-
-// ── Presenter view ──────────────────────────────────────────────────────────
-
-function PresenterView({
-  slides, theme, current, slide, nextSlide,
-  slideElapsed, totalElapsed, now,
-  mainRef, nextRef, mainScale, nextScale,
-  onChangeCurrent, onExit, onToggleView,
-}: {
-  slides: Slide[]
-  theme: Theme
-  current: number
-  slide: Slide
-  nextSlide: Slide | null
-  slideElapsed: number
-  totalElapsed: number
-  now: Date
-  mainRef: React.RefObject<HTMLDivElement>
-  nextRef: React.RefObject<HTMLDivElement>
-  mainScale: number
-  nextScale: number
-  onChangeCurrent: (i: number) => void
-  onExit: () => void
-  onToggleView: () => void
-}) {
-  const notes = (slide?.notes ?? '').trim()
-  const clock = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const isLast = current === slides.length - 1
-  const isFirst = current === 0
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: '#0a0a14',
-        display: 'grid',
-        gridTemplateColumns: '1fr 380px',
-        gridTemplateRows: '1fr auto',
-        color: '#fff',
-        fontFamily: 'Inter, sans-serif',
-      }}
-    >
-      {/* Main slide preview (occupies left column, full height) */}
-      <div
-        ref={mainRef}
-        onClick={() => onChangeCurrent(Math.min(current + 1, slides.length - 1))}
-        style={{
-          gridColumn: 1, gridRow: 1,
-          padding: 24,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden',
-          cursor: isLast ? 'default' : 'pointer',
-        }}
-      >
-        {slide && <SlidePreview slide={slide} theme={theme} scale={mainScale} />}
-      </div>
-
-      {/* Right column: next-up + notes */}
-      <div
-        style={{
-          gridColumn: 2, gridRow: 1,
-          padding: 20,
-          display: 'flex', flexDirection: 'column', gap: 16,
-          borderLeft: '1px solid rgba(255,255,255,0.06)',
-          background: '#0e0e1a',
-          overflow: 'hidden',
-        }}
-      >
-        <div>
-          <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: '0 0 6px 0', fontWeight: 600 }}>
-            Next up
-          </p>
-          <div
-            ref={nextRef}
-            style={{
-              aspectRatio: '16 / 9',
-              width: '100%',
-              background: '#000',
-              borderRadius: 8,
-              overflow: 'hidden',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            {nextSlide
-              ? <SlidePreview slide={nextSlide} theme={theme} scale={nextScale} />
-              : <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>End of deck</span>
-            }
-          </div>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', margin: '8px 0 0 0' }}>
-            {nextSlide ? `Slide ${current + 2} of ${slides.length}` : 'Last slide'}
-          </p>
-        </div>
-
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: '0 0 6px 0', fontWeight: 600 }}>
-            Speaker notes
-          </p>
-          <div
-            style={{
-              flex: 1, overflowY: 'auto',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 8,
-              padding: 14,
-              fontSize: 13.5,
-              lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.82)',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {notes || <span style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>No notes for this slide.</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom bar — clock, timers, nav, exit */}
-      <div
-        style={{
-          gridColumn: '1 / span 2', gridRow: 2,
-          height: 64,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(12px)',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          padding: '0 24px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          alignItems: 'center',
-        }}
-      >
-        {/* Left — clocks */}
-        <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-          <Clock label="Slide" value={formatTime(slideElapsed)} accent />
-          <Clock label="Total" value={formatTime(totalElapsed)} />
-          <Clock label="Clock" value={clock} />
-        </div>
-
-        {/* Center — nav */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
-          <NavBtn label="←" disabled={isFirst} onClick={() => onChangeCurrent(current - 1)} />
-          <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, minWidth: 60, textAlign: 'center' }}>
-            {current + 1} / {slides.length}
-          </span>
-          <NavBtn label="→" disabled={isLast} onClick={() => onChangeCurrent(current + 1)} />
-        </div>
-
-        {/* Right — view toggle + exit */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button
-            onClick={onToggleView}
-            title="Audience view (P)"
-            style={{
-              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-              color: 'rgba(255,255,255,0.7)', borderRadius: 7,
-              padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            Audience view
-          </button>
-          <button
-            onClick={onExit}
-            style={{
-              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-              color: 'rgba(255,255,255,0.6)', borderRadius: 7,
-              padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            ✕ Exit
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Clock({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div>
-      <p style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.6, color: 'rgba(255,255,255,0.4)', margin: 0, fontWeight: 600 }}>
-        {label}
-      </p>
-      <p style={{
-        fontSize: 18, fontWeight: 600, margin: '2px 0 0 0',
-        color: accent ? '#a5b4fc' : '#fff',
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function formatTime(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600)
-  const m = Math.floor((totalSeconds % 3600) / 60)
-  const s = totalSeconds % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
 }

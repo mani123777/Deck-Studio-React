@@ -9,10 +9,15 @@ import {
   ChevronsRight,
   Plus,
   FolderKanban,
+  Palette,
+  Keyboard,
+  Sparkles,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import { useToast } from '../ui/Toast'
+import { usageApi, type UsageInfo } from '../../api/client'
+import { KeyboardShortcutsModal } from './KeyboardShortcutsModal'
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -20,6 +25,40 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const toast = useToast()
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
+  // Load usage when sidebar mounts and when route changes (to catch new
+  // presentations created elsewhere in the app).
+  useEffect(() => {
+    if (!user) return
+    usageApi.get()
+      .then(({ data }) => setUsage(data))
+      .catch(() => {/* sidebar should never block on this — fail quietly */})
+  }, [user, location.pathname])
+
+  // Global `?` opens the shortcuts modal (skip when typing in inputs).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '?' || e.shiftKey === false && e.key !== '?') return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      e.preventDefault()
+      setShortcutsOpen(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Esc closes the modal.
+  useEffect(() => {
+    if (!shortcutsOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShortcutsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [shortcutsOpen])
 
   const handleLogout = async () => {
     const firstName = user?.full_name?.split(' ')[0]
@@ -41,7 +80,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
   const primary = [
     { icon: Home, label: 'Home', path: '/dashboard' },
-    { icon: LayoutTemplate, label: 'Decks', path: '/decks' },
+    { icon: LayoutTemplate, label: 'Presentations', path: '/decks' },
     { icon: FolderKanban, label: 'Projects', path: '/projects' },
     { icon: Library, label: 'Templates', path: '/templates' },
   ]
@@ -67,10 +106,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           <span className="text-[8px] font-bold tracking-tight">WAC</span>
         </button>
 
-        {/* New deck */}
+        {/* New presentation */}
         <button
           onClick={() => navigate('/create')}
-          title="New deck"
+          title="New Presentation"
           className="w-8 h-8 rounded-lg flex items-center justify-center mb-2 transition-colors"
           style={{ background: 'rgba(0,0,0,0.06)', color: 'var(--ink-strong)' }}
           onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.10)')}
@@ -141,7 +180,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       className="w-[248px] flex-shrink-0 flex flex-col"
       style={{ background: '#F7F7F6', borderRight: '1px solid var(--line)' }}
     >
-      {/* Workspace header */}
+      {/* Studio header */}
       <div
         className="h-[54px] flex items-center px-4 gap-3 flex-shrink-0"
         style={{ borderBottom: '1px solid var(--line)' }}
@@ -157,10 +196,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             className="text-[13.5px] font-semibold truncate leading-none"
             style={{ color: 'var(--ink-strong)', letterSpacing: '-0.02em' }}
           >
-            Deck Studio
+            Presentation Studio
           </p>
           <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--ink-faint)' }}>
-            {user?.email ?? 'workspace'}
+            {user?.email ?? 'studio'}
           </p>
         </div>
         <button
@@ -185,7 +224,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ink-strong)')}
         >
           <Plus size={13} strokeWidth={2.5} />
-          <span className="flex-1 text-left">New deck</span>
+          <span className="flex-1 text-left">New Presentation</span>
         </button>
 
         <button
@@ -210,7 +249,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         className="px-4 pt-4 pb-1.5 font-mono text-[10px] uppercase tracking-[0.14em]"
         style={{ color: 'var(--ink-faint)' }}
       >
-        Workspace
+        Studio
       </p>
 
       {/* Nav */}
@@ -255,6 +294,28 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       </nav>
 
       <div className="flex-1" />
+
+      {/* Plan + usage meter */}
+      {usage && (
+        <div className="px-3 pt-3 pb-2" style={{ borderTop: '1px solid var(--line)' }}>
+          <PlanUsageBlock usage={usage} onUpgrade={() => toast.info('Upgrade plans', 'Paid plans launching soon.')} />
+        </div>
+      )}
+
+      {/* Secondary footer links */}
+      <div className="px-3 pb-2 flex flex-col gap-0.5" style={{ borderTop: usage ? 'none' : '1px solid var(--line)', paddingTop: usage ? 0 : 12 }}>
+        <FooterLink
+          icon={<Palette size={13} />}
+          label="Brand kit"
+          onClick={() => navigate('/brand-kit')}
+        />
+        <FooterLink
+          icon={<Keyboard size={13} />}
+          label="Shortcuts"
+          shortcut="?"
+          onClick={() => setShortcutsOpen(true)}
+        />
+      </div>
 
       {/* Bottom — user + settings */}
       <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--line)' }}>
@@ -301,7 +362,118 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </button>
         </div>
       </div>
+
+      {shortcutsOpen && <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} />}
     </aside>
+  )
+}
+
+// ── Sidebar bits ────────────────────────────────────────────────────────────
+
+function PlanUsageBlock({ usage, onUpgrade }: { usage: UsageInfo; onUpgrade: () => void }) {
+  const limit = usage.generations_limit
+  const used = usage.generations_used
+  // Percentage with sane bounds. Unlimited plans show a quiet "Unlimited" hint
+  // instead of a filled bar.
+  const pct = limit ? Math.min(100, Math.round((used / Math.max(limit, 1)) * 100)) : 0
+  const isNearLimit = limit !== null && pct >= 80
+  const isAtLimit = limit !== null && used >= limit
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Plan row */}
+      <div className="flex items-center justify-between">
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10.5px] font-semibold uppercase tracking-[0.06em]"
+          style={{
+            background: 'rgba(99,102,241,0.10)',
+            color: '#6366f1',
+            border: '1px solid rgba(99,102,241,0.18)',
+          }}
+        >
+          <Sparkles size={9} strokeWidth={2.5} />
+          {usage.plan_label}
+        </span>
+        {usage.upgrade_available && (
+          <button
+            onClick={onUpgrade}
+            className="text-[11.5px] font-semibold transition-opacity hover:opacity-70"
+            style={{ color: 'var(--ink-strong)' }}
+          >
+            Upgrade →
+          </button>
+        )}
+      </div>
+
+      {/* Usage meter */}
+      {limit !== null ? (
+        <>
+          <div
+            className="h-1.5 rounded-full overflow-hidden"
+            style={{ background: 'rgba(0,0,0,0.06)' }}
+          >
+            <div
+              className="h-full transition-all"
+              style={{
+                width: `${pct}%`,
+                background: isAtLimit
+                  ? '#dc2626'
+                  : isNearLimit
+                    ? '#f59e0b'
+                    : 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                transition: 'width 300ms ease',
+              }}
+            />
+          </div>
+          <p className="text-[10.5px]" style={{ color: 'var(--ink-muted)' }}>
+            {used} of {limit} generations this month
+          </p>
+        </>
+      ) : (
+        <p className="text-[10.5px]" style={{ color: 'var(--ink-muted)' }}>
+          Unlimited generations
+        </p>
+      )}
+    </div>
+  )
+}
+
+function FooterLink({
+  icon, label, onClick, shortcut,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  shortcut?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2 px-2 h-7 rounded-md transition-colors text-left"
+      style={{ color: 'var(--ink-soft)' }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
+        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-strong)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent'
+        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-soft)'
+      }}
+    >
+      <span style={{ display: 'inline-flex', width: 16, justifyContent: 'center' }}>{icon}</span>
+      <span className="flex-1 text-[12px] font-medium">{label}</span>
+      {shortcut && (
+        <kbd
+          style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            color: 'var(--ink-faint)',
+          }}
+        >
+          {shortcut}
+        </kbd>
+      )}
+    </button>
   )
 }
 
