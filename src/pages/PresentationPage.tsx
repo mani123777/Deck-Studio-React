@@ -9,6 +9,7 @@ import { EditorToolbar } from '../components/Presentation/EditorToolbar'
 import { ChartModal } from '../components/Presentation/ChartModal'
 import { AddSlideMenu, type SlideTemplateKind } from '../components/Presentation/AddSlideMenu'
 import { NotesPanel } from '../components/Presentation/NotesPanel'
+import { SlideRewritePanel } from '../components/Presentation/SlideRewritePanel'
 import { VersionHistoryPanel } from '../components/Presentation/VersionHistoryPanel'
 import {
   LayoutsPanel,
@@ -17,6 +18,7 @@ import {
 } from '../components/Presentation/LayoutsPanel'
 import { getThemeById } from '../data/themes'
 import type { ThemePreset } from '../data/themes'
+import { useSlideHistory } from '../hooks/useSlideHistory'
 import { presetToTheme as sharedPresetToTheme, applyPresetToSlides as sharedApplyPresetToSlides } from '../utils/themePreset'
 import type {
   Block, ChartDataPoint, ChartType, DeckLayout,
@@ -135,7 +137,9 @@ export function PresentationPage() {
   const navigate = useNavigate()
 
   const [presentation, setPresentation] = useState<PresentationDetail | null>(null)
-  const [slides, setSlides]             = useState<Slide[]>([])
+  const history = useSlideHistory([])
+  const slides = history.slides
+  const setSlides = history.setSlides
   const [activeSlide, setActiveSlide]   = useState(0)
 
   const [themeOpen, setThemeOpen]       = useState(false)
@@ -161,6 +165,7 @@ export function PresentationPage() {
   const [layouts, setLayouts]           = useState<DeckLayout[]>([])
   const [aiImageOpen, setAiImageOpen]   = useState(false)
   const [aiImageBlockId, setAiImageBlockId] = useState<string | null>(null)
+  const [rewriteOpen, setRewriteOpen]   = useState(false)
 
   // Chart insert / edit modal
   const [chartModalOpen, setChartModalOpen]   = useState(false)
@@ -206,14 +211,14 @@ export function PresentationPage() {
     if (!id) return
     presentationsApi.get(id).then(async (r) => {
       setPresentation(r.data)
-      setSlides(r.data.slides)
+      history.resetTo(r.data.slides)
       setLayouts((r.data as any).layouts ?? [])
 
       const savedPreset = localStorage.getItem(`theme_preset_${id}`)
       if (savedPreset) {
         const preset = getThemeById(savedPreset)
         setActiveTheme(preset)
-        setSlides(applyPresetToSlides(r.data.slides, preset))
+        history.resetTo(applyPresetToSlides(r.data.slides, preset))
         setDbTheme(presetToTheme(preset))
       } else if (r.data.theme_id) {
         // Fetch the actual DB theme for canvas/fallback rendering.
@@ -305,11 +310,13 @@ export function PresentationPage() {
           ...s,
           blocks: s.blocks.map((b) => b.id === blockId ? { ...b, content } : b),
         }
-      )
+      ),
+      { mergeKey: `content:${activeSlide}:${blockId}` },
     )
-  }, [activeSlide])
+  }, [activeSlide, setSlides])
 
   const updateStyling = (blockId: string, updates: Partial<Styling>) => {
+    const mergeKey = `styling:${activeSlide}:${blockId}:${Object.keys(updates).sort().join(',')}`
     setSlides((prev) =>
       prev.map((s, i) =>
         i !== activeSlide ? s : {
@@ -318,7 +325,8 @@ export function PresentationPage() {
             b.id === blockId ? { ...b, styling: { ...b.styling, ...updates } } : b
           ),
         }
-      )
+      ),
+      { mergeKey },
     )
   }
 
@@ -329,7 +337,8 @@ export function PresentationPage() {
           ...s,
           blocks: s.blocks.map((b) => b.id === blockId ? { ...b, content } : b),
         }
-      )
+      ),
+      { mergeKey: `content:${activeSlide}:${blockId}` },
     )
   }
 
@@ -463,10 +472,21 @@ export function PresentationPage() {
   // ── Version restore ─────────────────────────────────────────────────────────
   const handleVersionRestored = (detail: PresentationDetail) => {
     setPresentation(detail)
-    setSlides(detail.slides)
+    history.resetTo(detail.slides)
     setLayouts((detail as any).layouts ?? [])
     setActiveSlide(0)
     setSelectedBlockId(null)
+  }
+
+  // ── Slide rewrite ───────────────────────────────────────────────────────────
+  const handleSlideRewrite = (newSlide: Slide, _note: string) => {
+    // Pin the rewritten slide into the current index; preserves order.
+    setSlides((prev) =>
+      prev.map((s, i) => i === activeSlide ? { ...newSlide, order: s.order } : s)
+    )
+    // Keep panel open so users can iterate, but bounce out of any block edit.
+    setSelectedBlockId(null)
+    setEditingBlockId(null)
   }
 
   // ── AI image generation ─────────────────────────────────────────────────────
@@ -583,9 +603,10 @@ export function PresentationPage() {
       prev.map((s, i) => i !== activeSlide ? s : {
         ...s,
         blocks: s.blocks.map((b) => b.id === blockId ? { ...b, position: next } : b),
-      })
+      }),
+      { mergeKey: `position:${activeSlide}:${blockId}` },
     )
-  }, [activeSlide])
+  }, [activeSlide, setSlides])
 
   const duplicateSlide = (index: number) => {
     const src = slides[index]
@@ -768,6 +789,20 @@ export function PresentationPage() {
             </span>
           )}
         </div>
+
+        {/* Undo / Redo — pinned in the top bar so they never overlap the canvas toolbar */}
+        <TopBarIconBtn
+          label="↶"
+          title="Undo (Ctrl+Z)"
+          disabled={!history.canUndo}
+          onClick={history.undo}
+        />
+        <TopBarIconBtn
+          label="↷"
+          title="Redo (Ctrl+Shift+Z)"
+          disabled={!history.canRedo}
+          onClick={history.redo}
+        />
 
         <TBtn label="Theme" active={themeOpen} onClick={() => setThemeOpen((o) => !o)} />
         <TBtn label="AI" active={chatOpen} onClick={() => setChatOpen((o) => !o)} />
@@ -1040,11 +1075,19 @@ export function PresentationPage() {
             />
           </div>
 
-          {/* P1: secondary toolbar — notes / layouts / history / AI image */}
+          {/* P1: secondary toolbar — rewrite, notes / layouts / history / AI image
+              (Undo/Redo live in the top app bar so they never overlap the canvas toolbar.) */}
           <div style={{
             position: 'absolute', top: 14, right: 24, zIndex: 30,
-            display: 'flex', gap: 8,
+            display: 'flex', gap: 8, alignItems: 'center',
           }}>
+            {currentSlide && (
+              <SecondaryBtn
+                label="Rewrite"
+                active={rewriteOpen}
+                onClick={() => setRewriteOpen((v) => !v)}
+              />
+            )}
             <SecondaryBtn
               label="Notes"
               active={notesOpen}
@@ -1215,6 +1258,15 @@ export function PresentationPage() {
         />
       )}
 
+      {/* AI slide rewrite panel */}
+      {rewriteOpen && currentSlide && (
+        <SlideRewritePanel
+          slide={currentSlide}
+          onClose={() => setRewriteOpen(false)}
+          onApply={handleSlideRewrite}
+        />
+      )}
+
       {/* AI image generation modal */}
       {aiImageOpen && (
         <AiImageModal
@@ -1317,9 +1369,10 @@ function PresentOverlay({ slides, theme, current, onChangeCurrent, onExit }: {
 
   useEffect(() => {
     const compute = () => {
-      if (!containerRef.current) return
-      const { clientWidth, clientHeight } = containerRef.current
-      setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
+      if (containerRef.current) {
+        const { clientWidth, clientHeight } = containerRef.current
+        setScale(Math.min(clientWidth / SLIDE_W, clientHeight / SLIDE_H))
+      }
     }
     compute()
     window.addEventListener('resize', compute)
@@ -1551,6 +1604,35 @@ function NavBtn({ label, disabled, onClick }: { label: string; disabled: boolean
 }
 
 // ── Secondary toolbar button (P1 panels) ────────────────────────────────────
+
+function TopBarIconBtn({
+  label, title, onClick, disabled,
+}: { label: string; title?: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{
+        width: 36, height: 36, borderRadius: 999,
+        background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+        border: '1px solid ' + (disabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.10)'),
+        color: disabled ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.85)',
+        fontSize: 16, fontWeight: 700,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)'
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'
+      }}
+    >{label}</button>
+  )
+}
 
 function SecondaryBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (

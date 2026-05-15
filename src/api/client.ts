@@ -209,6 +209,21 @@ export const imagesApi = {
     url.startsWith('http') ? url : `${BASE_URL}${url}`,
 }
 
+// Usage (plan + monthly generation count for sidebar meter)
+export interface UsageInfo {
+  plan: string
+  plan_label: string
+  generations_used: number
+  generations_limit: number | null
+  period_start: string
+  period_end: string
+  upgrade_available: boolean
+}
+
+export const usageApi = {
+  get: () => api.get<UsageInfo>('/usage'),
+}
+
 // Brand kit
 export const brandKitApi = {
   get: () => api.get<import('../types').BrandKit>('/brand-kit'),

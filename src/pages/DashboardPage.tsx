@@ -5,7 +5,10 @@ import { AppLayout } from '../components/Layout/AppLayout'
 import { SlidePreview } from '../components/Presentation/SlidePreview'
 import { Button } from '../components/ui/Button'
 import type { PresentationListItem, TemplateListItem } from '../types'
-import { Upload, MoreHorizontal, Sparkles, ArrowUpRight, FileUp, FilePlus, Wand2 } from 'lucide-react'
+import {
+  Upload, MoreHorizontal, Sparkles, ArrowUpRight,
+  LayoutGrid, ArrowDownToLine, Clock, Star,
+} from 'lucide-react'
 import { ImportModal } from '../components/Dashboard/ImportModal'
 
 const SLIDE_W = 1280
@@ -47,13 +50,6 @@ export function DashboardPage() {
     setOpenMenu(null)
   }
 
-  const greeting = (() => {
-    const h = new Date().getHours()
-    if (h < 12) return 'Good morning'
-    if (h < 18) return 'Good afternoon'
-    return 'Good evening'
-  })()
-
   const heroTemplates = templates.slice(0, 3)
 
   return (
@@ -70,7 +66,7 @@ export function DashboardPage() {
           borderBottom: '1px solid var(--line)',
         }}
       >
-        <p className="eyebrow" style={{ color: 'var(--ink-faint)' }}>— Workspace</p>
+        <p className="eyebrow" style={{ color: 'var(--ink-faint)' }}>— Home</p>
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -84,67 +80,69 @@ export function DashboardPage() {
             onClick={() => navigate('/create')}
             leadingIcon={<Sparkles size={12} />}
           >
-            Generate
+            New Presentation
           </Button>
         </div>
       </div>
 
       {/* ── Page content ────────────────────────────────────────────────────── */}
-      <div className="px-8 pt-12 pb-24">
+      <div className="px-10 lg:px-14 pt-14 pb-24 max-w-[1280px] mx-auto">
 
         {/* ── Hero ── */}
-        <div className="mb-14">
+        <div className="mb-12 max-w-[920px]">
           <h1
-            className="font-serif leading-[1.04] tracking-tightest mb-4"
+            className="font-serif leading-[1.08] tracking-tightest mb-5"
             style={{
-              fontSize: 'clamp(36px, 4.5vw, 54px)',
+              fontSize: 'clamp(34px, 3.6vw, 46px)',
               color: 'var(--ink-strong)',
             }}
           >
-            {greeting}.
-            <br />
-            <span className="font-serif-italic">Make something good.</span>
+            Create professional presentations <span className="font-serif-italic">faster.</span>
           </h1>
           <p
-            className="text-[14.5px] max-w-sm leading-relaxed"
+            className="text-[14.5px] max-w-md leading-relaxed"
             style={{ color: 'var(--ink-soft)' }}
           >
-            Decks, templates, and AI — gathered into one quiet workspace.
+            AI-powered slides, templates, and PowerPoint editing — all in one workspace.
           </p>
         </div>
 
+        {/* ── Quick generate input ── */}
+        <QuickGenerateInput onSubmit={(prompt) => navigate(`/create?prompt=${encodeURIComponent(prompt)}`)} />
+
         {/* ── Quick actions ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-20">
           <QuickAction
-            icon={<Wand2 size={15} />}
+            icon={<Sparkles size={15} />}
             label="01"
             title="Create with AI"
-            description="Describe your topic. AI assembles the deck."
+            description="Describe your topic or upload a document."
             onClick={() => navigate('/create')}
-            primary
+            accent="indigo"
           />
           <QuickAction
-            icon={<FilePlus size={15} />}
+            icon={<LayoutGrid size={15} />}
             label="02"
-            title="Pick a template"
-            description="Start from a hand-designed layout."
+            title="Start from a Template"
+            description="Choose a professionally designed layout."
             onClick={() => navigate('/templates')}
           />
           <QuickAction
-            icon={<FileUp size={15} />}
+            icon={<ArrowDownToLine size={15} />}
             label="03"
-            title="Import a PPTX"
-            description="Bring an existing PowerPoint in."
+            title="Import PowerPoint"
+            description="Continue editing an existing presentation."
             onClick={() => setShowImport(true)}
           />
         </div>
 
-        {/* ── Recent decks ── */}
+        {/* ── Recent Presentations ── */}
         <section className="mb-16">
           <SectionHeader
             eyebrow="— Your work"
-            title="Recent decks"
-            action={{ label: 'All decks', onClick: () => navigate('/decks') }}
+            title="Recent Presentations"
+            icon={<Clock size={18} strokeWidth={1.75} />}
+            action={{ label: 'All Presentations', onClick: () => navigate('/decks') }}
           />
 
           {loading && (
@@ -179,7 +177,7 @@ export function DashboardPage() {
                 className="text-[13.5px] mb-7 max-w-xs mx-auto leading-relaxed"
                 style={{ color: 'var(--ink-soft)' }}
               >
-                Create your first deck — generate from a prompt, or start from a template.
+                Create your first presentation — generate from a prompt, or start from a template.
               </p>
               <div className="flex items-center justify-center gap-2">
                 <Button variant="secondary" onClick={() => navigate('/templates')}>
@@ -219,6 +217,7 @@ export function DashboardPage() {
             <SectionHeader
               eyebrow="— Featured"
               title="A starting point"
+              icon={<Star size={18} strokeWidth={1.75} />}
               action={{ label: 'All templates', onClick: () => navigate('/templates') }}
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">
@@ -237,14 +236,150 @@ export function DashboardPage() {
   )
 }
 
+// ── Quick generate input ────────────────────────────────────────────────────
+function QuickGenerateInput({ onSubmit }: { onSubmit: (prompt: string) => void }) {
+  const [value, setValue] = useState('')
+  const [focused, setFocused] = useState(false)
+  const ready = value.trim().length > 1
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!ready) return
+    onSubmit(value.trim())
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-12 max-w-[820px] relative">
+      {/* Ambient glow behind the bar so it visually pops off the page */}
+      <div
+        aria-hidden
+        className="absolute inset-0 -m-6 rounded-[32px] pointer-events-none transition-opacity duration-500"
+        style={{
+          background:
+            'radial-gradient(ellipse 60% 80% at 50% 50%, rgba(99,102,241,0.10) 0%, rgba(139,92,246,0.06) 35%, transparent 70%)',
+          opacity: focused ? 1 : 0.55,
+        }}
+      />
+
+      <div className="relative">
+        <p
+          className="eyebrow mb-3 flex items-center gap-2"
+          style={{ color: 'var(--ink-faint)' }}
+        >
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{
+              background: '#8b5cf6',
+              boxShadow: '0 0 8px rgba(139,92,246,0.6)',
+            }}
+          />
+          AI Command Center
+        </p>
+
+        <div
+          className="flex items-center gap-3 pl-5 pr-2 h-[64px] rounded-[20px] transition-all duration-200"
+          style={{
+            background: '#fff',
+            border: `1.5px solid ${focused ? 'rgba(99,102,241,0.55)' : 'var(--line-strong, rgba(0,0,0,0.12))'}`,
+            boxShadow: focused
+              ? '0 0 0 4px rgba(99,102,241,0.12), 0 12px 32px -8px rgba(99,102,241,0.25), 0 4px 12px rgba(15,14,12,0.06)'
+              : '0 2px 4px rgba(15,14,12,0.04), 0 12px 28px -10px rgba(15,14,12,0.10)',
+          }}
+        >
+          <Sparkles
+            size={18}
+            style={{
+              color: focused ? '#6366f1' : 'var(--ink-muted)',
+              flexShrink: 0,
+              transition: 'color 200ms ease',
+            }}
+          />
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready) {
+                e.preventDefault()
+                onSubmit(value.trim())
+              }
+            }}
+            placeholder="What do you want to present about? Try “Q3 board update” or “AI in healthcare”…"
+            className="flex-1 outline-none text-[15px] bg-transparent"
+            style={{ color: 'var(--ink-strong)' }}
+            autoComplete="off"
+          />
+          <button
+            type="submit"
+            disabled={!ready}
+            className="flex items-center gap-2 h-[48px] px-5 rounded-[14px] text-[13.5px] font-semibold transition-all flex-shrink-0"
+            style={{
+              background: ready
+                ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+                : 'rgba(0,0,0,0.04)',
+              color: ready ? '#fff' : 'var(--ink-muted)',
+              cursor: ready ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap',
+              boxShadow: ready
+                ? '0 4px 12px rgba(99,102,241,0.35), 0 1px 2px rgba(99,102,241,0.4) inset, 0 -1px 2px rgba(0,0,0,0.1) inset'
+                : 'none',
+            }}
+            onMouseEnter={(e) => {
+              if (ready) {
+                e.currentTarget.style.transform = 'translateY(-1px)'
+                e.currentTarget.style.boxShadow =
+                  '0 6px 18px rgba(99,102,241,0.45), 0 1px 2px rgba(99,102,241,0.4) inset, 0 -1px 2px rgba(0,0,0,0.1) inset'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (ready) {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow =
+                  '0 4px 12px rgba(99,102,241,0.35), 0 1px 2px rgba(99,102,241,0.4) inset, 0 -1px 2px rgba(0,0,0,0.1) inset'
+              }
+            }}
+          >
+            <Sparkles size={14} />
+            Generate
+            <span
+              className="font-mono"
+              style={{
+                opacity: ready ? 0.6 : 0.4,
+                fontSize: 10.5,
+                fontWeight: 600,
+                marginLeft: 2,
+                letterSpacing: 0.5,
+              }}
+            >
+              ⌘↵
+            </span>
+          </button>
+        </div>
+
+        <p
+          className="text-[11.5px] mt-2.5 ml-1"
+          style={{ color: 'var(--ink-faint)' }}
+        >
+          Press <span className="font-mono" style={{ color: 'var(--ink-muted)' }}>⌘↵</span> to generate · or attach a document on the next step
+        </p>
+      </div>
+    </form>
+  )
+}
+
 // ── Section header ──────────────────────────────────────────────────────────
 function SectionHeader({
   eyebrow,
   title,
+  icon,
   action,
 }: {
   eyebrow: string
   title: string
+  /** Small outline icon shown before the title — improves scanability. */
+  icon?: React.ReactNode
   action?: { label: string; onClick: () => void }
 }) {
   return (
@@ -254,9 +389,18 @@ function SectionHeader({
           {eyebrow}
         </p>
         <h2
-          className="font-serif leading-tight tracking-tighter"
+          className="font-serif leading-tight tracking-tighter flex items-center gap-2.5"
           style={{ fontSize: 'clamp(22px, 2.5vw, 28px)', color: 'var(--ink-strong)' }}
         >
+          {icon && (
+            <span
+              aria-hidden
+              className="flex items-center justify-center flex-shrink-0"
+              style={{ color: 'var(--ink-muted)' }}
+            >
+              {icon}
+            </span>
+          )}
           {title}
         </h2>
       </div>
@@ -278,73 +422,85 @@ function SectionHeader({
 }
 
 // ── Quick action card ───────────────────────────────────────────────────────
+// All three cards share the same canvas, border, and shadow — equal visual
+// weight at rest. Only the icon tile carries an `accent` color cue so the
+// "AI" path is recognizable without dominating the row.
 function QuickAction({
   icon,
   label,
   title,
   description,
   onClick,
-  primary = false,
+  accent,
 }: {
   icon: React.ReactNode
   label: string
   title: string
   description: string
   onClick: () => void
-  primary?: boolean
+  /** Optional accent for the icon tile only. Cards otherwise look identical. */
+  accent?: 'indigo'
 }) {
-  const fg = primary ? '#fff' : 'var(--ink-strong)'
-  const fgSoft = primary ? 'rgba(255,255,255,0.6)' : 'var(--ink-soft)'
-  const fgFaint = primary ? 'rgba(255,255,255,0.3)' : 'var(--ink-faint)'
+  // Icon tile palette per accent. Default is neutral gray.
+  const iconBg =
+    accent === 'indigo' ? 'rgba(99,102,241,0.10)' : 'rgba(0,0,0,0.05)'
+  const iconColor =
+    accent === 'indigo' ? '#6366f1' : 'var(--ink-strong)'
 
   return (
     <button
       onClick={onClick}
       className="group relative text-left p-6 rounded-2xl transition-all duration-200 ease-out"
       style={{
-        background: primary ? 'var(--ink-strong)' : '#fff',
-        border: primary ? '1px solid transparent' : '1px solid var(--line)',
-        boxShadow: primary
-          ? '0 2px 4px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.1)'
-          : '0 1px 2px rgba(15,14,12,0.05)',
+        background: '#fff',
+        border: '1px solid var(--line)',
+        boxShadow: '0 1px 2px rgba(15,14,12,0.05)',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-2px)'
-        e.currentTarget.style.boxShadow = primary
-          ? '0 2px 4px rgba(0,0,0,0.14), 0 18px 40px rgba(0,0,0,0.18)'
-          : '0 1px 2px rgba(15,14,12,0.06), 0 14px 32px -8px rgba(15,14,12,0.13)'
+        e.currentTarget.style.boxShadow =
+          '0 1px 2px rgba(15,14,12,0.06), 0 14px 32px -8px rgba(15,14,12,0.13)'
+        e.currentTarget.style.borderColor = 'rgba(0,0,0,0.16)'
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.boxShadow = primary
-          ? '0 2px 4px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.1)'
-          : '0 1px 2px rgba(15,14,12,0.05)'
+        e.currentTarget.style.boxShadow = '0 1px 2px rgba(15,14,12,0.05)'
+        e.currentTarget.style.borderColor = 'var(--line)'
       }}
     >
-      {/* Icon + label */}
-      <div className="flex items-start justify-between mb-8">
+      {/* Icon tile + label number */}
+      <div className="flex items-start justify-between mb-7">
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
+          className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors duration-200"
           style={{
-            background: primary ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.05)',
-            color: fg,
+            background: iconBg,
+            color: iconColor,
           }}
         >
           {icon}
         </div>
-        <span className="eyebrow" style={{ color: fgFaint }}>
+        <span className="eyebrow" style={{ color: 'var(--ink-faint)' }}>
           {label}
         </span>
       </div>
 
-      {/* Text */}
-      <p
-        className="font-serif text-[19px] leading-snug tracking-tighter mb-2"
-        style={{ color: fg }}
-      >
-        {title}
-      </p>
-      <p className="text-[13px] leading-relaxed" style={{ color: fgSoft }}>
+      {/* Title with inline supporting icon for scannability */}
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          aria-hidden
+          className="flex items-center justify-center w-4 h-4 flex-shrink-0"
+          style={{ color: iconColor, opacity: accent ? 1 : 0.75 }}
+        >
+          {icon}
+        </span>
+        <p
+          className="font-serif text-[19px] leading-snug tracking-tighter"
+          style={{ color: 'var(--ink-strong)' }}
+        >
+          {title}
+        </p>
+      </div>
+      <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-soft)' }}>
         {description}
       </p>
 
@@ -352,7 +508,7 @@ function QuickAction({
       <ArrowUpRight
         size={14}
         className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-150"
-        style={{ color: primary ? 'rgba(255,255,255,0.7)' : 'var(--ink-muted)' }}
+        style={{ color: 'var(--ink-muted)' }}
       />
     </button>
   )

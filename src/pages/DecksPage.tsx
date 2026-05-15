@@ -62,12 +62,12 @@ export function DecksPage() {
       <div className="px-12 pt-12 pb-20 max-w-[1280px] mx-auto">
         <div className="flex items-end justify-between mb-10 flex-wrap gap-4">
           <div>
-            <p className="eyebrow mb-3">— Workspace</p>
+            <p className="eyebrow mb-3">— Home</p>
             <h1
               className="font-serif leading-[1.05] tracking-tighter text-[34px] md:text-[44px]"
               style={{ color: 'var(--ink-strong)' }}
             >
-              Decks
+              Presentations
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -83,7 +83,7 @@ export function DecksPage() {
               onClick={() => navigate('/create')}
               leadingIcon={<Sparkles size={13} />}
             >
-              Generate
+              New Presentation
             </Button>
           </div>
         </div>
@@ -117,7 +117,7 @@ export function DecksPage() {
               className="text-[14px] mb-7 max-w-sm mx-auto leading-relaxed"
               style={{ color: 'var(--ink-soft)' }}
             >
-              Create your first deck — generate from a prompt, or start from a template.
+              Create your first presentation — generate from a prompt, or start from a template.
             </p>
             <div className="flex items-center justify-center gap-2">
               <Button variant="secondary" onClick={() => navigate('/templates')}>
